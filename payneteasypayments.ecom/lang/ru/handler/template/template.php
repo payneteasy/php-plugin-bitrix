@@ -1,0 +1,20 @@
+<?php
+
+$MESS = [
+    'PAYNET_TEMPLATE_PAYMENT_CARD_NUMBER' => 'Номер карты *',
+    'PAYNET_TEMPLATE_PAYMENT_PRINTED_NAME' => 'Владелец карты *',
+    'PAYNET_TEMPLATE_PAYMENT_PRINTED_NAME_PLACEHOLDER' => 'Владелец карты',
+    'PAYNET_TEMPLATE_PAYMENT_EXPIRY_MONTH' => 'Месяц *',
+    'PAYNET_TEMPLATE_PAYMENT_EXPIRY_YEAR' => 'Год *',
+    'PAYNET_TEMPLATE_PAYMENT_CVC' => 'CVC *',
+    'PAYNET_TEMPLATE_PAYMENT_MADE_BY' => 'Оплата будет произведена через',
+    'PAYNET_TEMPLATE_HANDLER_NAME' => 'PaynetEasy',
+    'PAYNET_TEMPLATE_AMOUNT_TO_PAY' => 'Сумма к оплате:',
+    'PAYNET_TEMPLATE_NEXT_BUTTON' => 'Далее',
+    'PAYNET_TEMPLATE_REDIRECT_DESCRIPTION' => 'Страница будет перенаправлена на форму платежа.',
+    'PAYNET_TEMPLATE_ERROR_CREDENTIAL' => 'ПС для данного решения не создана/не настроена.',
+    'PAYNET_TEMPLATE_ERROR_REQUEST' => 'Во время запроса к шлюзу возникла ошибка, платеж не был создан.',
+    'PAYNET_TEMPLATE_ERROR_CREDENTAIL' => 'Клиентские ИД или Секрет были указаны неверно.',
+    'PAYNET_TEMPLATE_ERROR_GLOBAL' => 'В настоящее время платеж невозможен. Повторите попытку позднее.',
+    'PAYNET_TEMPLATE_ERROR_DEFAULT' => 'Что-то пошло не так.',
+];

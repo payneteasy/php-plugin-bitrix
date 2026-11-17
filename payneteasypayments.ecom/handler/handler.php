@@ -202,7 +202,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 //            }
 
             if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
-                if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' || $order->getField('STATUS_ID') !== 'VC')) {
+                if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' && $order->getField('STATUS_ID') !== 'VC')) {
                     $this->setTransaction($payment, 'Y', 'P');
                 }
                 LocalRedirect($successUrl, true);
@@ -241,7 +241,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         ]);
 
         if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
-            if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' || $order->getField('STATUS_ID') !== 'VC')) {
+            if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' && $order->getField('STATUS_ID') !== 'VC')) {
                 $this->setTransaction($payment, 'Y', 'P');
             }
             LocalRedirect($successUrl, true);
@@ -328,7 +328,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         $paynetStatusOrder = $this->getOrderStatus($payment, $shopOrderId);
 
         if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
-            if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' || $order->getField('STATUS_ID') !== 'VC')) {
+            if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' && $order->getField('STATUS_ID') !== 'VC')) {
                 $this->setTransaction($payment, 'Y', 'P');
             }
         } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'processing') {

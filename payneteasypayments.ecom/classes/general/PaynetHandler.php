@@ -71,11 +71,11 @@ class PaynetHandler
 
         global $USER;
 
-        $payneteasy_card_number       = $_GET['credit_card_number']??'';
-        $payneteasy_card_expiry_month = $_GET['expire_month']??'';
-        $payneteasy_card_expiry_year  = $_GET['expire_year']??'';
-        $payneteasy_card_name         = $_GET['card_printed_name']??'';
-        $payneteasy_card_cvv          = $_GET['cvv2']??'';
+        $payneteasy_card_number       = $_POST['credit_card_number']??'';
+        $payneteasy_card_expiry_month = $_POST['expire_month']??'';
+        $payneteasy_card_expiry_year  = $_POST['expire_year']??'';
+        $payneteasy_card_name         = $_POST['card_printed_name']??'';
+        $payneteasy_card_cvv          = $_POST['cvv2']??'';
 
         $card_data = [
             'credit_card_number' => $payneteasy_card_number??'',

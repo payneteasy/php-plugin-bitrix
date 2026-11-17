@@ -169,7 +169,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 
         if ($this->params['PAYNET_PAYMENT_METHOD'] == 'direct') {
             $PaynetHandler = new PaynetHandler();
-            if (isset($_GET['expire_year']) && isset($_GET['expire_month']) && isset($_GET['credit_card_number']) && isset($_GET['card_printed_name']) && isset($_GET['cvv2'])) {
+            if (isset($_POST['expire_year']) && isset($_POST['expire_month']) && isset($_POST['credit_card_number']) && isset($_POST['card_printed_name']) && isset($_POST['cvv2'])) {
                 $paynetPaymentResponse = $PaynetHandler->getPaynetPaymentResponse(
                     $order,
                     $this->params,

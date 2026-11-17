@@ -13,7 +13,7 @@ if ($params['WINDOW']) {
 
 switch ($params['ERROR']) {
     case 'OK': ?>
-    <form action="<?= $params['ACTION_URL']; ?>" method="get" class="payneteasy-form mb-2">
+    <form action="<?= $params['ACTION_URL']; ?>" method="<?= $params['PAYNET_PAYMENT_METHOD'] == 'direct' ? 'post' : 'get' ?>" class="payneteasy-form mb-2">
         <?php if ($params['PAYNET_PAYMENT_METHOD'] == 'direct') { ?>
             <div class="paynet_direct_form">
                 <div class="" style="padding: 5px;">

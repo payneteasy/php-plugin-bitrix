@@ -207,8 +207,9 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
                 }
                 LocalRedirect($successUrl, true);
             } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'processing') {
-                if ($order->getField('STATUS_ID') !== 'VP') {
-                    $this->setTransaction($payment, 'Y', 'VP');
+                // processing is not a final status: keep the payment unpaid, mark as pending
+                if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VP') {
+                    $this->setTransaction($payment, 'N', 'VP');
                 }
                 LocalRedirect($callbackUrl, true);
             } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'refunded') {
@@ -241,8 +242,9 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
             }
             LocalRedirect($successUrl, true);
         } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'processing') {
-            if ($order->getField('STATUS_ID') !== 'VP') {
-                $this->setTransaction($payment, 'Y', 'VP');
+            // processing is not a final status: keep the payment unpaid, mark as pending
+            if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VP') {
+                $this->setTransaction($payment, 'N', 'VP');
             }
             LocalRedirect($successUrl, true);
         } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'refunded') {
@@ -312,8 +314,9 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
                 $this->setTransaction($payment, 'Y', 'P');
             }
         } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'processing') {
-            if ($order->getField('STATUS_ID') !== 'VP') {
-                $this->setTransaction($payment, 'Y', 'VP');
+            // processing is not a final status: keep the payment unpaid, mark as pending
+            if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VP') {
+                $this->setTransaction($payment, 'N', 'VP');
             }
         } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'refunded') {
             if ($order->getField('STATUS_ID') !== 'VR') {

@@ -211,7 +211,9 @@ class PaynetHandler
         if (isset($response['merchant-order-id']))
         $merchant_order_id = $response['merchant-order-id'];
 
-        if (isset($paynet_order_id)) {
+        if (isset($paynet_order_id, $merchant_order_id) && ctype_digit((string)$paynet_order_id) && ctype_digit((string)$merchant_order_id)) {
+            $paynet_order_id = (int)$paynet_order_id;
+            $merchant_order_id = (int)$merchant_order_id;
             $connection = \Bitrix\Main\Application::getConnection();
             $sql = "INSERT IGNORE INTO `payneteasy_payments` (`paynet_order_id`, `merchant_order_id`) VALUES ($paynet_order_id, $merchant_order_id)";
 
@@ -235,11 +237,16 @@ class PaynetHandler
     {
         self::$logger = PaynetEasyLogger::getInstance();
 
+        $response = [];
+        if (!ctype_digit((string)$orderId) || (int)$orderId <= 0) {
+            return $response;
+        }
+        $orderId = (int)$orderId;
+
         $sandbox = false;
         if ($params['PAYNET_SANDBOX'] === 'Y')
             $sandbox = true;
 
-        $response = [];
         try {
             $paynetRequest = new PaynetApi(
                 $params['PAYNET_LOGIN'],
@@ -312,6 +319,11 @@ class PaynetHandler
     public static function setPaymentRefund($params, $orderId)
     {
         self::$logger = PaynetEasyLogger::getInstance();
+
+        if (!ctype_digit((string)$orderId) || (int)$orderId <= 0) {
+            return ['error-code' => 1, 'error-message' => 'Invalid order id'];
+        }
+        $orderId = (int)$orderId;
 
         $sandbox = false;
         if ($params['PAYNET_SANDBOX'] === 'Y')

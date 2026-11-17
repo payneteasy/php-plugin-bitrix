@@ -129,11 +129,18 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
     {
         $this->setPayneteasyLogger();
 
-        $shopOrderId = $request['merchant_order']??$_GET['ORDER_ID']??'';
+        $shopOrderId = self::getRequestOrderId($request);
         $paynetOrderId = $request['orderid']??'';
         $status = $request['status']??'';
 
+        if ($shopOrderId <= 0) {
+            return false;
+        }
+
         $order = Order::load($shopOrderId);
+        if (!$order) {
+            return false;
+        }
         $paymentCollection = $order->getPaymentCollection();
         $payment = $paymentCollection->createItem();
 
@@ -268,6 +275,17 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
     }
 
 
+    private static function getRequestOrderId(Request $request): int
+    {
+        $orderId = $request->get('merchant_order') ?? $request->get('ORDER_ID') ?? '';
+        if (!ctype_digit((string)$orderId)) {
+            return 0;
+        }
+
+        return (int)$orderId;
+    }
+
+
     public static function isMyResponse(Request $request, $paySystemId)
     {
         return true;
@@ -283,7 +301,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         $this->setPayneteasyLogger();
         $this->logger->setOption('additionalCommonText', 'webhook-' . rand(1111, 9999));
 
-        $shopOrderId = $request['merchant_order']??$payment->getOrderId()??'';
+        $shopOrderId = self::getRequestOrderId($request) ?: (int)$payment->getOrderId();
 
         $order = Order::load($shopOrderId);
 

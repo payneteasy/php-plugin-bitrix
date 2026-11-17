@@ -25,8 +25,15 @@ use Bitrix\Sale;
 use Paynet\Pay\PaynetHandler;
 use Paynet\Pay\PaynetEasyLogger;
 
-$orderId = $_GET['orderId']??$_GET['ORDER_ID'];
+$orderId = $_GET['orderId']??$_GET['ORDER_ID']??'';
+if (!ctype_digit((string)$orderId) || (int)$orderId <= 0) {
+    die();
+}
+$orderId = (int)$orderId;
 $order = Order::load($orderId);
+if (!$order) {
+    die();
+}
 $paymentCollection = $order->getPaymentCollection();
 $payment = $paymentCollection->load($order);
 

@@ -26,6 +26,8 @@ $bxCheck = version_compare($bxCurrent, $bxRequired, '>=') ? 'success': 'warning'
 
 if (
     $_SERVER['REQUEST_METHOD'] === 'GET'
+    && isset($_GET['paynet'])
+    && check_bitrix_sessid()
 ) {
     if (isset($_GET['paynet']) && $_GET['paynet'] === 'delete') {
         LocalRedirect('/bitrix/admin/partner_modules.php', true);
@@ -33,12 +35,12 @@ if (
 
     if (isset($_GET['paynet']) && $_GET['paynet'] === 'report') {
         $debug->spReport();
-        LocalRedirect(str_replace('&paynet=report', '', $_SERVER['REQUEST_URI']), true);
+        LocalRedirect(str_replace(['&paynet=report', '&' . bitrix_sessid_get()], '', $_SERVER['REQUEST_URI']), true);
     }
 
     if (isset($_GET['paynet']) && $_GET['paynet'] === 'clear') {
         $debug->spClear();
-        LocalRedirect(str_replace('&paynet=clear', '', $_SERVER['REQUEST_URI']), true);
+        LocalRedirect(str_replace(['&paynet=clear', '&' . bitrix_sessid_get()], '', $_SERVER['REQUEST_URI']), true);
     }
 }
 ?>
@@ -137,15 +139,15 @@ b.required {
                                 <div class="debug-spoiler">
                                     <br>
                                     <div>
-                                    <a class="btn-mimik blue" href="/bitrix/admin/settings.php?lang=ru&mid=payneteasypayments.ecom&paynet=report" download>Скачать отчет</a>
+                                    <a class="btn-mimik blue" href="/bitrix/admin/settings.php?lang=ru&mid=payneteasypayments.ecom&paynet=report&<?= bitrix_sessid_get() ?>" download>Скачать отчет</a>
                                     <p>Сохранить отчет по состоянию модуля для передачи службе поддержки модуля</p>
                                 </div>
                                 <div>
-                                    <a class="btn-mimik blue" href="/bitrix/admin/settings.php?lang=ru&mid=payneteasypayments.ecom&paynet=clear">Очистить логи</a>
+                                    <a class="btn-mimik blue" href="/bitrix/admin/settings.php?lang=ru&mid=payneteasypayments.ecom&paynet=clear&<?= bitrix_sessid_get() ?>">Очистить логи</a>
                                     <p>Очистить лог-файлы, перед повторением ошибки</p>
                                 </div>
                                 <div>
-                                    <a class="btn-mimik red" href="/bitrix/admin/settings.php?lang=ru&mid=payneteasypayments.ecom&paynet=delete">Переустановить модуль</a>
+                                    <a class="btn-mimik red" href="/bitrix/admin/settings.php?lang=ru&mid=payneteasypayments.ecom&paynet=delete&<?= bitrix_sessid_get() ?>">Переустановить модуль</a>
                                     <p>Перейти на страницу управления модулями из Маркетплейса, где можно будет удалить и установить модуль снова.</p>
                                 </div>
                             </div>

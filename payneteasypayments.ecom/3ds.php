@@ -128,8 +128,6 @@ function curlRequestHandler($action, $data, $method, $integration_method, $type,
     (
         CURLOPT_HEADER         => 0,
         CURLOPT_USERAGENT      => 'Payneteasy-Client/1.0',
-        CURLOPT_SSL_VERIFYHOST => 0,
-        CURLOPT_SSL_VERIFYPEER => 0,
         CURLOPT_POST           => 1,
         CURLOPT_RETURNTRANSFER => 1
     ));

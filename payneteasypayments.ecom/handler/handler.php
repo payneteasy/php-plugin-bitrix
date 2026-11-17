@@ -33,7 +33,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
     private bool $isRefund = true;
 
 
-    public function initiatePay(Payment $payment, Request $request = null)
+    public function initiatePay(Payment $payment, ?Request $request = null)
     {
         $shopOrderId = $request['merchant_order']??$payment->getOrderId()??'';
         $paynetOrderId = $request['orderid']??'';

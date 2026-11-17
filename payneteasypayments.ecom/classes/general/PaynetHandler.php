@@ -142,7 +142,7 @@ class PaynetHandler
                     'order_id' => $orderId,
                     'amount' => $amount,
                     'return_url' => $returnUrl,
-                    'data' => $data,
+                    'data' => self::maskCardData($data),
                 ]
             ]);
 
@@ -162,8 +162,8 @@ class PaynetHandler
                 self::$logger->debug(
                     __FUNCTION__ . ' > direct ', [
                     'arguments' => [
-                        'params' => $params,
-                        'data' => $data,
+                        'params' => array_diff_key($params, ['PAYNET_CONTROL_KEY' => true]),
+                        'data' => self::maskCardData($data),
                         'sandbox' => $sandbox,
                         'actionUrl' => $actionUrl,
                     ]
@@ -397,6 +397,21 @@ class PaynetHandler
         }
 
         return $refund;
+    }
+
+
+    private static function maskCardData(array $data): array
+    {
+        if (!empty($data['credit_card_number'])) {
+            $data['credit_card_number'] = '****' . substr((string)$data['credit_card_number'], -4);
+        }
+        foreach (['cvv2', 'expire_month', 'expire_year', 'card_printed_name'] as $key) {
+            if (isset($data[$key])) {
+                $data[$key] = '***';
+            }
+        }
+
+        return $data;
     }
 
 

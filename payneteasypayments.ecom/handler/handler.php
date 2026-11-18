@@ -33,7 +33,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
     private bool $isRefund = true;
 
 
-    public function initiatePay(Payment $payment, Request $request = null)
+    public function initiatePay(Payment $payment, ?Request $request = null)
     {
         $shopOrderId = $request['merchant_order']??$payment->getOrderId()??'';
         $paynetOrderId = $request['orderid']??'';
@@ -129,11 +129,18 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
     {
         $this->setPayneteasyLogger();
 
-        $shopOrderId = $request['merchant_order']??$_GET['ORDER_ID']??'';
+        $shopOrderId = self::getRequestOrderId($request);
         $paynetOrderId = $request['orderid']??'';
         $status = $request['status']??'';
 
+        if ($shopOrderId <= 0) {
+            return false;
+        }
+
         $order = Order::load($shopOrderId);
+        if (!$order) {
+            return false;
+        }
         $paymentCollection = $order->getPaymentCollection();
         $payment = $paymentCollection->createItem();
 
@@ -162,7 +169,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 
         if ($this->params['PAYNET_PAYMENT_METHOD'] == 'direct') {
             $PaynetHandler = new PaynetHandler();
-            if (isset($_GET['expire_year']) && isset($_GET['expire_month']) && isset($_GET['credit_card_number']) && isset($_GET['card_printed_name']) && isset($_GET['cvv2'])) {
+            if (isset($_POST['expire_year']) && isset($_POST['expire_month']) && isset($_POST['credit_card_number']) && isset($_POST['card_printed_name']) && isset($_POST['cvv2'])) {
                 $paynetPaymentResponse = $PaynetHandler->getPaynetPaymentResponse(
                     $order,
                     $this->params,
@@ -195,13 +202,14 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 //            }
 
             if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
-                if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' || $order->getField('STATUS_ID') !== 'VC')) {
+                if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' && $order->getField('STATUS_ID') !== 'VC')) {
                     $this->setTransaction($payment, 'Y', 'P');
                 }
                 LocalRedirect($successUrl, true);
             } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'processing') {
-                if ($order->getField('STATUS_ID') !== 'VP') {
-                    $this->setTransaction($payment, 'Y', 'VP');
+                // processing is not a final status: keep the payment unpaid, mark as pending
+                if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VP') {
+                    $this->setTransaction($payment, 'N', 'VP');
                 }
                 LocalRedirect($callbackUrl, true);
             } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'refunded') {
@@ -209,10 +217,14 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
                     $this->setTransaction($payment, 'N', 'VR', 'Y');
                 }
                 LocalRedirect($failUrl, true);
-            } else {
-                if ($order->getField('STATUS_ID') !== 'VC') {
+            } elseif (isset($paynetStatusOrder['status']) && in_array(trim($paynetStatusOrder['status']), ['declined', 'error', 'filtered'], true)) {
+                if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VC') {
                     $this->setTransaction($payment, 'N', 'VC', 'Y');
                 }
+                LocalRedirect($failUrl, true);
+            } else {
+                // status query failed or returned no final status: leave the order untouched
+                $this->logger->error("Order {$shopOrderId}: no final status from gateway, order not changed");
                 LocalRedirect($failUrl, true);
             }
 
@@ -229,13 +241,14 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         ]);
 
         if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
-            if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' || $order->getField('STATUS_ID') !== 'VC')) {
+            if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' && $order->getField('STATUS_ID') !== 'VC')) {
                 $this->setTransaction($payment, 'Y', 'P');
             }
             LocalRedirect($successUrl, true);
         } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'processing') {
-            if ($order->getField('STATUS_ID') !== 'VP') {
-                $this->setTransaction($payment, 'Y', 'VP');
+            // processing is not a final status: keep the payment unpaid, mark as pending
+            if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VP') {
+                $this->setTransaction($payment, 'N', 'VP');
             }
             LocalRedirect($successUrl, true);
         } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'refunded') {
@@ -243,10 +256,14 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
                 $this->setTransaction($payment, 'N', 'VR', 'Y');
             }
             LocalRedirect($failUrl, true);
-        } else {
-            if ($order->getField('STATUS_ID') !== 'VC') {
+        } elseif (isset($paynetStatusOrder['status']) && in_array(trim($paynetStatusOrder['status']), ['declined', 'error', 'filtered'], true)) {
+            if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VC') {
                 $this->setTransaction($payment, 'N', 'VC', 'Y');
             }
+            LocalRedirect($failUrl, true);
+        } else {
+            // status query failed or returned no final status: leave the order untouched
+            $this->logger->error("Order {$shopOrderId}: no final status from gateway, order not changed");
             LocalRedirect($failUrl, true);
         }
         $paymentId = $request->get('ORDER');
@@ -268,9 +285,30 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
     }
 
 
+    private static function getRequestOrderId(Request $request): int
+    {
+        $orderId = $request->get('merchant_order') ?? $request->get('ORDER_ID') ?? '';
+        if (!ctype_digit((string)$orderId)) {
+            return 0;
+        }
+
+        return (int)$orderId;
+    }
+
+
     public static function isMyResponse(Request $request, $paySystemId)
     {
-        return true;
+        $orderId = self::getRequestOrderId($request);
+        if ($orderId <= 0) {
+            return false;
+        }
+
+        $order = Order::load($orderId);
+        if (!$order) {
+            return false;
+        }
+
+        return in_array((int)$paySystemId, array_map('intval', $order->getPaymentSystemId()), true);
     }
 
 
@@ -283,28 +321,32 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         $this->setPayneteasyLogger();
         $this->logger->setOption('additionalCommonText', 'webhook-' . rand(1111, 9999));
 
-        $shopOrderId = $request['merchant_order']??$payment->getOrderId()??'';
+        $shopOrderId = self::getRequestOrderId($request) ?: (int)$payment->getOrderId();
 
         $order = Order::load($shopOrderId);
 
         $paynetStatusOrder = $this->getOrderStatus($payment, $shopOrderId);
 
         if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
-            if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' || $order->getField('STATUS_ID') !== 'VC')) {
+            if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' && $order->getField('STATUS_ID') !== 'VC')) {
                 $this->setTransaction($payment, 'Y', 'P');
             }
         } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'processing') {
-            if ($order->getField('STATUS_ID') !== 'VP') {
-                $this->setTransaction($payment, 'Y', 'VP');
+            // processing is not a final status: keep the payment unpaid, mark as pending
+            if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VP') {
+                $this->setTransaction($payment, 'N', 'VP');
             }
         } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'refunded') {
             if ($order->getField('STATUS_ID') !== 'VR') {
                 $this->setTransaction($payment, 'N', 'VR', 'Y');
             }
-        } else {
-            if ($order->getField('STATUS_ID') !== 'VC') {
+        } elseif (isset($paynetStatusOrder['status']) && in_array(trim($paynetStatusOrder['status']), ['declined', 'error', 'filtered'], true)) {
+            if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VC') {
                 $this->setTransaction($payment, 'N', 'VC', 'Y');
             }
+        } else {
+            // status query failed or returned no final status: leave the order untouched
+            $this->logger->error("Order {$shopOrderId}: no final status from gateway, order not changed");
         }
         return 'ok';
     }

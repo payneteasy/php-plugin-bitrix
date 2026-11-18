@@ -71,11 +71,11 @@ class PaynetHandler
 
         global $USER;
 
-        $payneteasy_card_number       = $_GET['credit_card_number']??'';
-        $payneteasy_card_expiry_month = $_GET['expire_month']??'';
-        $payneteasy_card_expiry_year  = $_GET['expire_year']??'';
-        $payneteasy_card_name         = $_GET['card_printed_name']??'';
-        $payneteasy_card_cvv          = $_GET['cvv2']??'';
+        $payneteasy_card_number       = $_POST['credit_card_number']??'';
+        $payneteasy_card_expiry_month = $_POST['expire_month']??'';
+        $payneteasy_card_expiry_year  = $_POST['expire_year']??'';
+        $payneteasy_card_name         = $_POST['card_printed_name']??'';
+        $payneteasy_card_cvv          = $_POST['cvv2']??'';
 
         $card_data = [
             'credit_card_number' => $payneteasy_card_number??'',
@@ -142,7 +142,7 @@ class PaynetHandler
                     'order_id' => $orderId,
                     'amount' => $amount,
                     'return_url' => $returnUrl,
-                    'data' => $data,
+                    'data' => self::maskCardData($data),
                 ]
             ]);
 
@@ -162,8 +162,8 @@ class PaynetHandler
                 self::$logger->debug(
                     __FUNCTION__ . ' > direct ', [
                     'arguments' => [
-                        'params' => $params,
-                        'data' => $data,
+                        'params' => array_diff_key($params, ['PAYNET_CONTROL_KEY' => true]),
+                        'data' => self::maskCardData($data),
                         'sandbox' => $sandbox,
                         'actionUrl' => $actionUrl,
                     ]
@@ -211,7 +211,9 @@ class PaynetHandler
         if (isset($response['merchant-order-id']))
         $merchant_order_id = $response['merchant-order-id'];
 
-        if (isset($paynet_order_id)) {
+        if (isset($paynet_order_id, $merchant_order_id) && ctype_digit((string)$paynet_order_id) && ctype_digit((string)$merchant_order_id)) {
+            $paynet_order_id = (int)$paynet_order_id;
+            $merchant_order_id = (int)$merchant_order_id;
             $connection = \Bitrix\Main\Application::getConnection();
             $sql = "INSERT IGNORE INTO `payneteasy_payments` (`paynet_order_id`, `merchant_order_id`) VALUES ($paynet_order_id, $merchant_order_id)";
 
@@ -235,11 +237,16 @@ class PaynetHandler
     {
         self::$logger = PaynetEasyLogger::getInstance();
 
+        $response = [];
+        if (!ctype_digit((string)$orderId) || (int)$orderId <= 0) {
+            return $response;
+        }
+        $orderId = (int)$orderId;
+
         $sandbox = false;
         if ($params['PAYNET_SANDBOX'] === 'Y')
             $sandbox = true;
 
-        $response = [];
         try {
             $paynetRequest = new PaynetApi(
                 $params['PAYNET_LOGIN'],
@@ -313,6 +320,11 @@ class PaynetHandler
     {
         self::$logger = PaynetEasyLogger::getInstance();
 
+        if (!ctype_digit((string)$orderId) || (int)$orderId <= 0) {
+            return ['error-code' => 1, 'error-message' => 'Invalid order id'];
+        }
+        $orderId = (int)$orderId;
+
         $sandbox = false;
         if ($params['PAYNET_SANDBOX'] === 'Y')
             $sandbox = true;
@@ -385,6 +397,21 @@ class PaynetHandler
         }
 
         return $refund;
+    }
+
+
+    private static function maskCardData(array $data): array
+    {
+        if (!empty($data['credit_card_number'])) {
+            $data['credit_card_number'] = '****' . substr((string)$data['credit_card_number'], -4);
+        }
+        foreach (['cvv2', 'expire_month', 'expire_year', 'card_printed_name'] as $key) {
+            if (isset($data[$key])) {
+                $data[$key] = '***';
+            }
+        }
+
+        return $data;
     }
 
 

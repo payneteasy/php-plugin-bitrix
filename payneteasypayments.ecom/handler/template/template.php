@@ -13,7 +13,7 @@ if ($params['WINDOW']) {
 
 switch ($params['ERROR']) {
     case 'OK': ?>
-    <form action="<?= $params['ACTION_URL']; ?>" method="get" class="payneteasy-form mb-2">
+    <form action="<?= htmlspecialcharsbx($params['ACTION_URL']); ?>" method="<?= $params['PAYNET_PAYMENT_METHOD'] == 'direct' ? 'post' : 'get' ?>" class="payneteasy-form mb-2">
         <?php if ($params['PAYNET_PAYMENT_METHOD'] == 'direct') { ?>
             <div class="paynet_direct_form">
                 <div class="" style="padding: 5px;">
@@ -35,10 +35,10 @@ switch ($params['ERROR']) {
                     <input minlength="3" maxlength="4" name="cvv2" id="cvv2" autocomplete="cc-csc" type="password" style="max-width: 50%" required="required">
                 </div>
             </div>
-            <input type="hidden" name="ORDER_ID" value="<?= $_GET['ORDER_ID'] ?>">
+            <input type="hidden" name="ORDER_ID" value="<?= htmlspecialcharsbx($_GET['ORDER_ID'] ?? '') ?>">
             <?php } ?>
         <?php foreach ($params['PARAMS'] as $name => $value): ?>
-            <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
+            <input type="hidden" name="<?= htmlspecialcharsbx($name) ?>" value="<?= htmlspecialcharsbx($value) ?>">
         <?php endforeach; ?>
         <p class="payneteasy-titlemb-2"><?=Loc::getMessage('PAYNET_TEMPLATE_PAYMENT_MADE_BY')?> "<b><?=Loc::getMessage('PAYNET_TEMPLATE_HANDLER_NAME')?></b>".</p>
         <p class="payneteasy-amount mb-2"><?=Loc::getMessage('PAYNET_TEMPLATE_AMOUNT_TO_PAY')?> <strong><?= $params['AMOUNT'] ?></strong></p>

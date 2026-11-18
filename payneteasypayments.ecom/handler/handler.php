@@ -141,15 +141,20 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         if (!$order) {
             return false;
         }
-        $paymentCollection = $order->getPaymentCollection();
-        $payment = $paymentCollection->createItem();
-
-        $paySystemService = PaySystem\Manager::getObjectById($order->getPaymentSystemId()[0]);
-        $payment->setFields(array(
-            'PAY_SYSTEM_ID' => $order->getPaymentSystemId()[0],
-            'PAY_SYSTEM_NAME' => $paySystemService->getField("NAME"),
-            'SUM'=> $order->getPrice()
-        ));
+        // Use the order's existing PaynetEasy payment; creating a new one on every
+        // return or callback left the original payment unpaid and added duplicates
+        $payment = null;
+        foreach ($order->getPaymentCollection() as $item) {
+            if ($item->getPaySystem() && $item->getPaySystem()->getField('ACTION_FILE') === 'payneteasypayments') {
+                $payment = $item;
+                if (!$item->isPaid()) {
+                    break;
+                }
+            }
+        }
+        if ($payment === null) {
+            return false;
+        }
 
         if (empty($this->params)) {
             $this->params = $this->getPaymentParams($payment);

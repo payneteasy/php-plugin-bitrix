@@ -94,7 +94,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         } elseif ($this->params['PAYNET_PAYMENT_METHOD'] == 'direct') {
             $callbackUrl = '/bitrix/tools/sale_ps_result.php?ORDER_ID='.$orderId??$payment->getOrderId();
             $protocol = (empty($_SERVER['HTTPS']) ? 'http' : 'https');
-            $host = $_SERVER['HTTP_HOST'];
+            $host = \Paynet\Pay\PaynetHandler::getSiteHost();
             $redirectUrl = "{$protocol}://{$host}{$callbackUrl}";
             if ($this->params['PAYNET_THREE_D_SECURE'] == 'Y') {
                 $redirectUrl = '/bitrix/modules/payneteasypayments.ecom/3ds.php?orderId='.$orderId??$payment->getOrderId();
@@ -161,7 +161,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         $failUrl = '/bitrix/tools/sale_ps_fail.php?ORDER_ID='.$shopOrderId;
 
         $protocol = (empty($_SERVER['HTTPS']) ? 'http' : 'https');
-        $host = $_SERVER['HTTP_HOST'];
+        $host = \Paynet\Pay\PaynetHandler::getSiteHost();
         $redirectUrl = "{$protocol}://{$host}{$redirectUrl}";
         $callbackUrl = "{$protocol}://{$host}{$callbackUrl}";
         $successUrl = "{$protocol}://{$host}{$successUrl}";
@@ -467,7 +467,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
             $this->logger->error("Order {$orderId} take error code: {$orderStatus['error-code']}");
             $failUrl = '/bitrix/tools/sale_ps_fail.php?ORDER_ID='.$orderId;
             $protocol = (empty($_SERVER['HTTPS']) ? 'http' : 'https');
-            $host = $_SERVER['HTTP_HOST'];
+            $host = \Paynet\Pay\PaynetHandler::getSiteHost();
             $failUrl = "{$protocol}://{$host}{$failUrl}";
             LocalRedirect($failUrl, true);
         } else {

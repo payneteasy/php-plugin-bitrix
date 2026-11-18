@@ -11,6 +11,32 @@ class PaynetHandler
 {
     private static $logger;
 
+    /**
+     * Site host from Bitrix settings (site "Server URL", then main module "server_name").
+     * Never taken from the request Host header, which the client controls.
+     */
+    public static function getSiteHost($siteId = null)
+    {
+        $host = '';
+        if ($siteId === null && defined('SITE_ID')) {
+            $siteId = SITE_ID;
+        }
+        if ($siteId) {
+            $site = \Bitrix\Main\SiteTable::getList([
+                'filter' => ['=LID' => $siteId],
+                'select' => ['SERVER_NAME'],
+            ])->fetch();
+            $host = $site ? (string)$site['SERVER_NAME'] : '';
+        }
+        if ($host === '') {
+            $host = (string)\Bitrix\Main\Config\Option::get('main', 'server_name', '');
+        }
+        if ($host === '') {
+            throw new \Bitrix\Main\SystemException('PaynetEasy: set the site server URL in the Bitrix site settings');
+        }
+        return preg_replace('~^https?://~i', '', rtrim($host, '/'));
+    }
+
 
     public function getPaynetPaymentResponse(
         $order,
@@ -91,7 +117,7 @@ class PaynetHandler
         $failUrl = '/bitrix/tools/sale_ps_fail.php?ORDER_ID='.$orderId;
 
         $protocol = (empty($_SERVER['HTTPS']) ? 'http' : 'https');
-        $host = $_SERVER['HTTP_HOST'];
+        $host = self::getSiteHost($order->getSiteId());
 
         $returnUrl = "{$protocol}://{$host}{$returnUrl}";
         $callbackUrl = "{$protocol}://{$host}{$callbackUrl}";

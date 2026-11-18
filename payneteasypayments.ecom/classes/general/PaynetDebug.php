@@ -401,7 +401,8 @@ class paynetDebug {
             $subject = "CMS-PLUGIN-REPORT";
             $message = '1C BITRIX';
             $to = "it@пейнетизи.рф";
-            $from = "noreply@{$_SERVER['HTTP_HOST']}";
+            try { $host = PaynetHandler::getSiteHost(); } catch (\Throwable $e) { $host = "localhost"; }
+            $from = "noreply@{$host}";
 
             $headers = [
                 "From" => $from,

@@ -94,7 +94,7 @@ class payneteasypayments_ecom extends CModule
             $this->InstallOrderStatus();
 
             $connection = \Bitrix\Main\Application::getConnection();
-            $sql = "CREATE TABLE IF NOT EXISTS payneteasy_payments (id int unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY, paynet_order_id bigint unsigned NOT NULL, merchant_order_id int NOT NULL, INDEX merchant_order_id (merchant_order_id))";
+            $sql = "CREATE TABLE IF NOT EXISTS payneteasy_payments (id int unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY, paynet_order_id bigint unsigned NOT NULL, merchant_order_id int NOT NULL, redirect_url varchar(1024) DEFAULT NULL, INDEX merchant_order_id (merchant_order_id))";
             $connection->query($sql);
 
             $APPLICATION->ThrowException(Loc::getMessage("PAYNET_SUCCESS_INSTALL"));

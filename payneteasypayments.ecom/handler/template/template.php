@@ -48,6 +48,7 @@ switch ($params['ERROR']) {
                 </div>
             </div>
             <input type="hidden" name="ORDER_ID" value="<?= htmlspecialcharsbx($_GET['ORDER_ID'] ?? '') ?>">
+            <?= bitrix_sessid_post() ?>
             <?php } ?>
         <?php foreach ($params['PARAMS'] as $name => $value): ?>
             <input type="hidden" name="<?= htmlspecialcharsbx($name) ?>" value="<?= htmlspecialcharsbx($value) ?>">

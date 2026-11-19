@@ -59,6 +59,20 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 
         $contextRequest = Context::getCurrent()->getRequest();
 
+        // Return from the payment form: show the payment result in the site layout
+        $isResultPage = $contextRequest->getQuery('PAYNET_RESULT') === '1';
+
+        if ($payment->isPaid()) {
+            // Paid: show the status, do not start another payment
+            $this->setExtraParams([
+                'ERROR' => 'PAID',
+                'ORDER_ID' => $orderId,
+                'AMOUNT' => CurrencyFormat($payment->getSum(), $this->order->getCurrency()),
+                'WINDOW' => $isResultPage,
+            ]);
+            return $this->showTemplate($payment, "template");
+        }
+
         $queryData = $contextRequest->getQueryList()->toArray(); // массив get параметров
 
         $this->logger->setOption('additionalCommonText', 'init-' . rand(1111, 9999));
@@ -115,8 +129,14 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         ];
 
         $args['WINDOW'] = false;
-        if ($this->params['PAYNET_NEW_WINDOW'] === 'Y') {
+        if ($this->params['PAYNET_NEW_WINDOW'] === 'Y' || $isResultPage) {
             $args['WINDOW'] = true;
+        }
+
+        // Back from the payment form, but the order is not paid
+        if ($isResultPage) {
+            $args['NOTICE'] = $this->order->getField('STATUS_ID') === 'VP' ? 'PROCESSING' : 'NOT_PAID';
+            $args['ORDER_ID'] = $orderId;
         }
 
         $this->setExtraParams($args);
@@ -162,8 +182,11 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 
         $redirectUrl = '/personal/orders/'.(int)$shopOrderId;
         $callbackUrl = '/bitrix/tools/sale_ps_result.php?ORDER_ID='.$shopOrderId;
-        // After the status check the customer sees the order page with the payment status
-        $successUrl = '/personal/orders/'.(int)$shopOrderId;
+        // After the status check the customer sees the payment page with the result
+        // (a real page of the shop, it does not depend on the URL rewrite settings)
+        $successUrl = '/personal/order/payment/?ORDER_ID='.(int)$shopOrderId
+            .'&PAYMENT_ID='.urlencode((string)$payment->getField('ACCOUNT_NUMBER'))
+            .'&PAYNET_RESULT=1';
         $failUrl = $successUrl;
 
         $protocol = (empty($_SERVER['HTTPS']) ? 'http' : 'https');

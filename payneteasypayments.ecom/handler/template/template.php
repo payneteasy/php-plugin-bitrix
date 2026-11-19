@@ -22,6 +22,8 @@ switch ($params['ERROR']) {
         <p><?= Loc::getMessage('PAYNET_TEMPLATE_PAID_AMOUNT') ?> <strong><?= $params['AMOUNT'] ?></strong></p>
         <p><a href="/personal/"><?= Loc::getMessage('PAYNET_TEMPLATE_PERSONAL_LINK') ?></a></p>
     </div>
+<?php break; case 'PROCESSING': ?>
+    <p><a href="javascript:location.reload()"><?= Loc::getMessage('PAYNET_TEMPLATE_REFRESH_LINK') ?></a></p>
 <?php break; case 'OK': ?>
     <form action="<?= htmlspecialcharsbx($params['ACTION_URL']); ?>" method="<?= $params['PAYNET_PAYMENT_METHOD'] == 'direct' ? 'post' : 'get' ?>" class="payneteasy-form mb-2">
         <?php if ($params['PAYNET_PAYMENT_METHOD'] == 'direct') { ?>
@@ -46,6 +48,7 @@ switch ($params['ERROR']) {
                 </div>
             </div>
             <input type="hidden" name="ORDER_ID" value="<?= htmlspecialcharsbx($_GET['ORDER_ID'] ?? '') ?>">
+            <?= bitrix_sessid_post() ?>
             <?php } ?>
         <?php foreach ($params['PARAMS'] as $name => $value): ?>
             <input type="hidden" name="<?= htmlspecialcharsbx($name) ?>" value="<?= htmlspecialcharsbx($value) ?>">

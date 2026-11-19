@@ -95,16 +95,30 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 
         $orderAmount = CurrencyFormat($payment->getSum(), $currency);
 
+        // The payment is still being processed by the gateway: do not start another one
+        if ($isResultPage && $this->order->getField('STATUS_ID') === 'VP') {
+            $this->setExtraParams([
+                'ERROR' => 'PROCESSING',
+                'NOTICE' => 'PROCESSING',
+                'ORDER_ID' => $orderId,
+                'WINDOW' => true,
+            ]);
+            return $this->showTemplate($payment, "template");
+        }
+
         $redirectUrl = '';
         if ($this->params['PAYNET_PAYMENT_METHOD'] == 'form') {
-            if (isset($orderId)) {
+            // The form of the previous attempt still waits for the card: use it,
+            // do not start another sale for the same order
+            $redirectUrl = PaynetHandler::getOpenPaymentForm($this->params, $orderId);
+            if ($redirectUrl === null && isset($orderId)) {
                 $paynetPaymentResponse = $PaynetHandler->getPaynetPaymentResponse(
                     $this->order,
                     $this->params,
                     $orderId
                 );
+                $redirectUrl = $paynetPaymentResponse['redirect-url'] ?? '';
             }
-            $redirectUrl = $paynetPaymentResponse['redirect-url'];
         } elseif ($this->params['PAYNET_PAYMENT_METHOD'] == 'direct') {
             $callbackUrl = '/bitrix/tools/sale_ps_result.php?ORDER_ID='.$orderId??$payment->getOrderId();
             $protocol = (empty($_SERVER['HTTPS']) ? 'http' : 'https');
@@ -198,7 +212,13 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 
         if ($this->params['PAYNET_PAYMENT_METHOD'] == 'direct') {
             $PaynetHandler = new PaynetHandler();
-            if (isset($_POST['expire_year']) && isset($_POST['expire_month']) && isset($_POST['credit_card_number']) && isset($_POST['card_printed_name']) && isset($_POST['cvv2'])) {
+            $hasCard = isset($_POST['expire_year']) && isset($_POST['expire_month']) && isset($_POST['credit_card_number']) && isset($_POST['card_printed_name']) && isset($_POST['cvv2']);
+            // Only the customer of the order may start a payment with a card
+            if ($hasCard && !PaynetHandler::isOrderOwnerRequest($order)) {
+                $this->logger->error("Order {$shopOrderId}: card payment request not from the order customer, ignored");
+                $hasCard = false;
+            }
+            if ($hasCard) {
                 $paynetPaymentResponse = $PaynetHandler->getPaynetPaymentResponse(
                     $order,
                     $this->params,
@@ -241,7 +261,14 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
                 if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VP') {
                     $this->setTransaction($payment, 'N', 'VP');
                 }
-                LocalRedirect($callbackUrl, true);
+                // The gateway asks for 3-D Secure: show its page, it returns the customer here
+                if (!empty($paynetStatusOrder['html'])) {
+                    echo $paynetStatusOrder['html'];
+                    die();
+                }
+                // Otherwise show the result page ("being processed"); redirecting back
+                // to this handler would loop while the gateway keeps the status
+                LocalRedirect($successUrl, true);
             } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'refunded') {
                 if ($order->getField('STATUS_ID') !== 'VR') {
                     $this->setTransaction($payment, 'N', 'VR', 'Y');

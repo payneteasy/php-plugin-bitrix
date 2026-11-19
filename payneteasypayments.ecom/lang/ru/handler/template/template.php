@@ -22,4 +22,5 @@ $MESS = [
     'PAYNET_TEMPLATE_PERSONAL_LINK' => 'Перейти в личный кабинет',
     'PAYNET_TEMPLATE_NOTICE_NOT_PAID' => 'Оплата заказа №#ORDER_ID# не прошла. Вы можете повторить оплату.',
     'PAYNET_TEMPLATE_NOTICE_PROCESSING' => 'Платёж по заказу №#ORDER_ID# обрабатывается. Обновите страницу через минуту.',
+    'PAYNET_TEMPLATE_REFRESH_LINK' => 'Обновить страницу',
 ];

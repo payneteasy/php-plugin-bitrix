@@ -22,4 +22,5 @@ $MESS = [
     'PAYNET_TEMPLATE_PERSONAL_LINK' => 'Go to your account',
     'PAYNET_TEMPLATE_NOTICE_NOT_PAID' => 'The payment for order ##ORDER_ID# did not go through. You can pay again.',
     'PAYNET_TEMPLATE_NOTICE_PROCESSING' => 'The payment for order ##ORDER_ID# is being processed. Refresh the page in a minute.',
+    'PAYNET_TEMPLATE_REFRESH_LINK' => 'Refresh the page',
 ];

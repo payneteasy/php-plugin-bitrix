@@ -34,6 +34,10 @@ $order = Order::load($orderId);
 if (!$order) {
     die();
 }
+// Only the customer of the order may start a payment with a card
+if (!PaynetHandler::isOrderOwnerRequest($order)) {
+    die();
+}
 $paymentCollection = $order->getPaymentCollection();
 $payment = $paymentCollection->load($order);
 
@@ -74,7 +78,7 @@ $getPaynetPaymentResponse = $PaynetHandler->getPaynetPaymentResponse(
     $orderId
 );
 
-$sql = 'SELECT `paynet_order_id` FROM `payneteasy_payments` WHERE merchant_order_id='.$orderId;
+$sql = 'SELECT `paynet_order_id` FROM `payneteasy_payments` WHERE merchant_order_id='.$orderId.' ORDER BY `id` DESC LIMIT 1';
 $result = \Bitrix\Main\Application::getConnection()->query($sql);
 $paynet_order_id = $result->fetch();
 

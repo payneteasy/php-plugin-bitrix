@@ -249,7 +249,8 @@ class PaynetHandler
             self::ensurePaymentsTable();
             $connection = \Bitrix\Main\Application::getConnection();
             // One row per payment attempt: the status is taken from the latest one
-            $sql = "INSERT INTO `payneteasy_payments` (`paynet_order_id`, `merchant_order_id`) VALUES ($paynet_order_id, $merchant_order_id)";
+            $redirect = isset($response['redirect-url']) ? $connection->getSqlHelper()->forSql(substr(trim((string)$response['redirect-url']), 0, 1024)) : '';
+            $sql = "INSERT INTO `payneteasy_payments` (`paynet_order_id`, `merchant_order_id`, `redirect_url`) VALUES ($paynet_order_id, $merchant_order_id, '$redirect')";
 
 //            $sql = "INSERT INTO payneteasy_payments (paynet_order_id, merchant_order_id)
 //SELECT * FROM (SELECT $paynet_order_id, $merchant_order_id) AS tmp
@@ -290,33 +291,29 @@ class PaynetHandler
                 $sandbox
             );
 
+            // A customer may start several payment attempts (a declined card, another tab):
+            // check all of them, an approved attempt wins, then a processing one
             self::ensurePaymentsTable();
-            $sql = 'SELECT `paynet_order_id` FROM `payneteasy_payments` WHERE merchant_order_id='.$orderId.' ORDER BY `id` DESC LIMIT 1';
+            $sql = 'SELECT `paynet_order_id` FROM `payneteasy_payments` WHERE merchant_order_id='.$orderId.' ORDER BY `id` DESC LIMIT 50';
             $result = \Bitrix\Main\Application::getConnection()->query($sql);
-            $paynet_order_id = $result->fetch();
 
-            if (isset($paynet_order_id['paynet_order_id'])) {
-                self::$logger->debug(
-                    __FUNCTION__ . ' > getOrderInfo - INPUT: ', [
-                    'arguments' => [
-                        'order_id' => $orderId,
-                        'paynet_order_id' => $paynet_order_id['paynet_order_id']
-                    ]
-                ]);
+            $actionUrl = $params['PAYNET_LIVE_URL'];
+            if ($sandbox)
+                $actionUrl = $params['PAYNET_SANDBOX_URL'];
 
+            $PaynetHandler = new PaynetHandler;
+            $latest = null;
+            $processing = null;
+
+            while ($row = $result->fetch()) {
                 $data = [
                     'login' => $params['PAYNET_LOGIN'],
                     'client_orderid' => (string)$orderId,
-                    'orderid' => $paynet_order_id['paynet_order_id'],
+                    'orderid' => $row['paynet_order_id'],
                 ];
-                $PaynetHandler = new PaynetHandler;
                 $data['control'] = $PaynetHandler->signStatusRequest($data, $params['PAYNET_LOGIN'], $params['PAYNET_CONTROL_KEY']);
 
-                $actionUrl = $params['PAYNET_LIVE_URL'];
-                if ($sandbox)
-                    $actionUrl = $params['PAYNET_SANDBOX_URL'];
-
-                $response = $paynetRequest->status(
+                $attempt = $paynetRequest->status(
                     $data,
                     $params['PAYNET_PAYMENT_METHOD'],
                     $sandbox,
@@ -326,8 +323,30 @@ class PaynetHandler
 
                 self::$logger->debug(
                     __FUNCTION__ . ' > getOrderInfo - OUTPUT: ', [
-                    'response' => $response
+                    'order_id' => $orderId,
+                    'paynet_order_id' => $row['paynet_order_id'],
+                    'response' => $attempt
                 ]);
+
+                $attemptStatus = trim((string)($attempt['status'] ?? ''));
+                if ($attemptStatus === 'approved' || $attemptStatus === 'refunded') {
+                    $response = $attempt;
+                    $latest = null;
+                    $processing = null;
+                    break;
+                }
+                if ($attemptStatus === 'processing' && $processing === null) {
+                    $processing = $attempt;
+                }
+                if ($latest === null) {
+                    $latest = $attempt;
+                }
+            }
+
+            if ($processing !== null) {
+                $response = $processing;
+            } elseif ($latest !== null) {
+                $response = $latest;
             }
 
         } catch (\Exception | PaynetEasyException $e) {
@@ -374,7 +393,11 @@ class PaynetHandler
             ]);
 
             self::ensurePaymentsTable();
-            $sql = 'SELECT `paynet_order_id` FROM `payneteasy_payments` WHERE merchant_order_id='.$orderId.' ORDER BY `id` DESC LIMIT 1';
+            // Refund the approved attempt (the latest one may be a later unpaid form)
+            $approved = self::getOrderInfo($params, $orderId);
+            $sql = 'SELECT `paynet_order_id` FROM `payneteasy_payments` WHERE merchant_order_id='.$orderId
+                .(isset($approved['paynet-order-id']) && ctype_digit(trim((string)$approved['paynet-order-id'])) ? ' AND paynet_order_id='.trim((string)$approved['paynet-order-id']) : '')
+                .' ORDER BY `id` DESC LIMIT 1';
             $result = \Bitrix\Main\Application::getConnection()->query($sql);
             $paynet_order_id = $result->fetch();
 
@@ -506,6 +529,9 @@ class PaynetHandler
         if (!isset($columns['id'])) {
             $connection->query('ALTER TABLE `payneteasy_payments` ADD INDEX `merchant_order_id` (`merchant_order_id`)');
         }
+        if (!isset($columns['redirect_url'])) {
+            $connection->query('ALTER TABLE `payneteasy_payments` ADD `redirect_url` varchar(1024) DEFAULT NULL');
+        }
 
         $checked = true;
     }
@@ -529,5 +555,59 @@ class PaynetHandler
         }
 
         return is_file($target) && md5_file($source) === md5_file($target);
+    }
+
+    /**
+     * The payment form of the latest attempt, if the gateway still waits for the card.
+     * A new sale is not started while that form can be paid.
+     *
+     * @return string|null
+     */
+    public static function getOpenPaymentForm($params, $orderId)
+    {
+        if (!ctype_digit((string)$orderId) || (int)$orderId <= 0) {
+            return null;
+        }
+        self::ensurePaymentsTable();
+
+        $row = \Bitrix\Main\Application::getConnection()->query(
+            'SELECT `paynet_order_id`, `redirect_url` FROM `payneteasy_payments` WHERE merchant_order_id='.(int)$orderId.' ORDER BY `id` DESC LIMIT 1'
+        )->fetch();
+
+        if (empty($row['redirect_url']) || strpos($row['redirect_url'], 'https://') !== 0) {
+            return null;
+        }
+
+        $sandbox = $params['PAYNET_SANDBOX'] === 'Y';
+        $data = [
+            'login' => $params['PAYNET_LOGIN'],
+            'client_orderid' => (string)(int)$orderId,
+            'orderid' => $row['paynet_order_id'],
+        ];
+        $PaynetHandler = new PaynetHandler;
+        $data['control'] = $PaynetHandler->signStatusRequest($data, $params['PAYNET_LOGIN'], $params['PAYNET_CONTROL_KEY']);
+
+        try {
+            $paynetRequest = new PaynetApi($params['PAYNET_LOGIN'], $params['PAYNET_CONTROL_KEY'], $params['PAYNET_ENDPOINT_ID'], $params['PAYNET_PAYMENT_METHOD'], $sandbox);
+            $status = $paynetRequest->status($data, $params['PAYNET_PAYMENT_METHOD'], $sandbox, $sandbox ? $params['PAYNET_SANDBOX_URL'] : $params['PAYNET_LIVE_URL'], $params['PAYNET_ENDPOINT_ID']);
+        } catch (\Exception $e) {
+            return null;
+        }
+
+        return trim((string)($status['status'] ?? '')) === 'processing' ? $row['redirect_url'] : null;
+    }
+
+    /**
+     * TRUE if the current request comes from the customer of the order
+     * (the signed-in owner, with the Bitrix session token).
+     */
+    public static function isOrderOwnerRequest($order)
+    {
+        global $USER;
+
+        return is_object($USER) && $USER->IsAuthorized()
+            && (int)$order->getUserId() > 0
+            && (int)$order->getUserId() === (int)$USER->GetID()
+            && function_exists('check_bitrix_sessid') && check_bitrix_sessid();
     }
 }

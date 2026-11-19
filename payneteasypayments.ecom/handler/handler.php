@@ -414,6 +414,10 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
     }
 
 
+    /**
+     * Called by Bitrix from Payment::setReturn('P'): Bitrix itself marks the
+     * payment unpaid when MONEY_LEAVING is returned and the caller saves the order.
+     */
     public function refund(Payment $payment, $refundableSum): ServiceResult
     {
         $this->setPayneteasyLogger();
@@ -422,29 +426,23 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         if (empty($this->params)) {
             $this->params = $this->getParamsBusValue($payment);
         }
-        $refund = PaynetHandler::setPaymentRefund($this->params, $payment->getOrderId());
-        $order = Order::load($payment->getOrderId());
-        $statusOrder = $this->getOrderStatus($payment, $payment->getOrderId());
+
+        $sum = (float)$refundableSum > 0 ? $refundableSum : $payment->getSum();
+        $refund = PaynetHandler::setPaymentRefund($this->params, $payment->getOrderId(), $sum, $payment->getField('CURRENCY'));
+
         if (isset($refund['error-code'])) {
-            $order->setField('COMMENTS', $refund['error-message']);
-            $result->addError(new Error($refund['error-message']));
-        } else {
-//            if (isset($statusOrder['object']['transactions']['refunds'])) {
-                $result->setOperationType(ServiceResult::MONEY_LEAVING);
-                if ($order->getField('STATUS_ID') != 'VR') {
-                    $this->setTransaction($payment, 'N', 'VR', 'Y');
-                    $payment->setPaid('N');
-                    $order->setFieldNoDemand('PAYED', 'N');
-                    $return = $payment->setReturn('P');
-                    if (!$return->isSuccess())
-                    {
-                        $order->setField('COMMENTS', $return->getErrorMessages());
-                        $result->addError(new Error($return->getErrorMessages()));
-                    }
-                }
-//            }
+            $result->addError(new Error((string)$refund['error-message']));
+            return $result;
         }
-        $order->save();
+
+        $result->setOperationType(ServiceResult::MONEY_LEAVING);
+
+        // VR keeps the order from being marked paid again by the approved reversal status
+        $order = $payment->getCollection()->getOrder();
+        if ($order->getField('STATUS_ID') !== 'VR') {
+            $order->setField('STATUS_ID', 'VR');
+        }
+
         return $result;
     }
 

@@ -370,7 +370,7 @@ class PaynetHandler
     }
 
 
-    public static function setPaymentRefund($params, $orderId)
+    public static function setPaymentRefund($params, $orderId, $amount = null, $currency = null)
     {
         self::$logger = PaynetEasyLogger::getInstance();
 
@@ -401,16 +401,31 @@ class PaynetHandler
             $result = \Bitrix\Main\Application::getConnection()->query($sql);
             $paynet_order_id = $result->fetch();
 
+            if (empty($paynet_order_id['paynet_order_id'])) {
+                return ['error-code' => 1, 'error-message' => 'PaynetEasy payment not found'];
+            }
+
+            // Refund the given sum, by default the whole approved sale
+            if ($amount === null || $currency === null) {
+                $amount = $approved['amount'] ?? null;
+                $currency = $approved['currency'] ?? null;
+            }
+            if (!is_numeric($amount) || (float)$amount <= 0 || !preg_match('/^[A-Z]{3}$/', strtoupper(trim((string)$currency)))) {
+                return ['error-code' => 1, 'error-message' => 'Refund amount or currency is missing'];
+            }
+
             $data = [
                 'login' => $params['PAYNET_LOGIN'],
-                'client_orderid' => $orderId,
-                'orderid' => $paynet_order_id['paynet_order_id'],
-                'comment' => 'Order cancel '
+                'client_orderid' => (string)$orderId,
+                'orderid' => (string)$paynet_order_id['paynet_order_id'],
+                'amount' => number_format((float)$amount, 2, '.', ''),
+                'currency' => strtoupper(trim((string)$currency)),
+                'comment' => 'Refund'
             ];
 
             $PaynetHandler = new PaynetHandler();
 
-            $data['control'] = $PaynetHandler->signPaymentRequest($data, $params['PAYNET_ENDPOINT_ID'], $params['PAYNET_CONTROL_KEY']);
+            $data['control'] = $PaynetHandler->signReturnRequest($data, $params['PAYNET_LOGIN'], $params['PAYNET_CONTROL_KEY']);
 
             $actionUrl = $params['PAYNET_LIVE_URL'];
             if ($sandbox)
@@ -437,6 +452,29 @@ class PaynetHandler
                 __FUNCTION__ . ' > setRefunds - OUTPUT: ', [
                 'response' => $refund
             ]);
+
+            if (in_array(trim((string)($refund['type'] ?? '')), ['error', 'validation-error'], true) || trim((string)($refund['status'] ?? '')) === 'error') {
+                return ['error-code' => $refund['error-code'] ?? 1, 'error-message' => trim((string)($refund['error-message'] ?? 'Refund refused'))];
+            }
+
+            // The refund is processed asynchronously: wait briefly for the final answer
+            for ($i = 0; $i < 5; $i++) {
+                $statusData = [
+                    'login' => $params['PAYNET_LOGIN'],
+                    'client_orderid' => (string)$orderId,
+                    'orderid' => (string)$paynet_order_id['paynet_order_id'],
+                ];
+                $statusData['control'] = $PaynetHandler->signStatusRequest($statusData, $params['PAYNET_LOGIN'], $params['PAYNET_CONTROL_KEY']);
+                $state = $paynetRequest->status($statusData, $params['PAYNET_PAYMENT_METHOD'], $sandbox, $actionUrl, $params['PAYNET_ENDPOINT_ID']);
+                $final = trim((string)($state['status'] ?? ''));
+                if (in_array($final, ['declined', 'error', 'filtered'], true)) {
+                    return ['error-code' => $state['error-code'] ?? 1, 'error-message' => trim((string)($state['error-message'] ?? 'Refund declined'))];
+                }
+                if ($final !== 'processing') {
+                    break;
+                }
+                sleep(1);
+            }
 
         } catch (\Exception | PaynetEasyException $e) {
             // Handle exception and log error
@@ -482,6 +520,15 @@ class PaynetHandler
         $base .= $requestFields['orderid'];
 
         return $this->signString($base, $merchantControl);
+    }
+
+
+    private function signReturnRequest($data, $login, $merchantControl)
+    {
+        return $this->signString(
+            $login . $data['client_orderid'] . $data['orderid'] . (int)round($data['amount'] * 100) . $data['currency'],
+            $merchantControl
+        );
     }
 
 

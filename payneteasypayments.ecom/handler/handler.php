@@ -95,6 +95,17 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 
         $orderAmount = CurrencyFormat($payment->getSum(), $currency);
 
+        // The payment is still being processed by the gateway: do not start another one
+        if ($isResultPage && $this->order->getField('STATUS_ID') === 'VP') {
+            $this->setExtraParams([
+                'ERROR' => 'PROCESSING',
+                'NOTICE' => 'PROCESSING',
+                'ORDER_ID' => $orderId,
+                'WINDOW' => true,
+            ]);
+            return $this->showTemplate($payment, "template");
+        }
+
         $redirectUrl = '';
         if ($this->params['PAYNET_PAYMENT_METHOD'] == 'form') {
             if (isset($orderId)) {

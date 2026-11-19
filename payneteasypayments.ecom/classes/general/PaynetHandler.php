@@ -290,33 +290,29 @@ class PaynetHandler
                 $sandbox
             );
 
+            // A customer may start several payment attempts (a new form, another tab):
+            // check the latest ones, an approved attempt wins, then a processing one
             self::ensurePaymentsTable();
-            $sql = 'SELECT `paynet_order_id` FROM `payneteasy_payments` WHERE merchant_order_id='.$orderId.' ORDER BY `id` DESC LIMIT 1';
+            $sql = 'SELECT `paynet_order_id` FROM `payneteasy_payments` WHERE merchant_order_id='.$orderId.' ORDER BY `id` DESC LIMIT 5';
             $result = \Bitrix\Main\Application::getConnection()->query($sql);
-            $paynet_order_id = $result->fetch();
 
-            if (isset($paynet_order_id['paynet_order_id'])) {
-                self::$logger->debug(
-                    __FUNCTION__ . ' > getOrderInfo - INPUT: ', [
-                    'arguments' => [
-                        'order_id' => $orderId,
-                        'paynet_order_id' => $paynet_order_id['paynet_order_id']
-                    ]
-                ]);
+            $actionUrl = $params['PAYNET_LIVE_URL'];
+            if ($sandbox)
+                $actionUrl = $params['PAYNET_SANDBOX_URL'];
 
+            $PaynetHandler = new PaynetHandler;
+            $latest = null;
+            $processing = null;
+
+            while ($row = $result->fetch()) {
                 $data = [
                     'login' => $params['PAYNET_LOGIN'],
                     'client_orderid' => (string)$orderId,
-                    'orderid' => $paynet_order_id['paynet_order_id'],
+                    'orderid' => $row['paynet_order_id'],
                 ];
-                $PaynetHandler = new PaynetHandler;
                 $data['control'] = $PaynetHandler->signStatusRequest($data, $params['PAYNET_LOGIN'], $params['PAYNET_CONTROL_KEY']);
 
-                $actionUrl = $params['PAYNET_LIVE_URL'];
-                if ($sandbox)
-                    $actionUrl = $params['PAYNET_SANDBOX_URL'];
-
-                $response = $paynetRequest->status(
+                $attempt = $paynetRequest->status(
                     $data,
                     $params['PAYNET_PAYMENT_METHOD'],
                     $sandbox,
@@ -326,8 +322,30 @@ class PaynetHandler
 
                 self::$logger->debug(
                     __FUNCTION__ . ' > getOrderInfo - OUTPUT: ', [
-                    'response' => $response
+                    'order_id' => $orderId,
+                    'paynet_order_id' => $row['paynet_order_id'],
+                    'response' => $attempt
                 ]);
+
+                $attemptStatus = trim((string)($attempt['status'] ?? ''));
+                if ($attemptStatus === 'approved' || $attemptStatus === 'refunded') {
+                    $response = $attempt;
+                    $latest = null;
+                    $processing = null;
+                    break;
+                }
+                if ($attemptStatus === 'processing' && $processing === null) {
+                    $processing = $attempt;
+                }
+                if ($latest === null) {
+                    $latest = $attempt;
+                }
+            }
+
+            if ($processing !== null) {
+                $response = $processing;
+            } elseif ($latest !== null) {
+                $response = $latest;
             }
 
         } catch (\Exception | PaynetEasyException $e) {
@@ -374,7 +392,11 @@ class PaynetHandler
             ]);
 
             self::ensurePaymentsTable();
-            $sql = 'SELECT `paynet_order_id` FROM `payneteasy_payments` WHERE merchant_order_id='.$orderId.' ORDER BY `id` DESC LIMIT 1';
+            // Refund the approved attempt (the latest one may be a later unpaid form)
+            $approved = self::getOrderInfo($params, $orderId);
+            $sql = 'SELECT `paynet_order_id` FROM `payneteasy_payments` WHERE merchant_order_id='.$orderId
+                .(isset($approved['paynet-order-id']) && ctype_digit(trim((string)$approved['paynet-order-id'])) ? ' AND paynet_order_id='.trim((string)$approved['paynet-order-id']) : '')
+                .' ORDER BY `id` DESC LIMIT 1';
             $result = \Bitrix\Main\Application::getConnection()->query($sql);
             $paynet_order_id = $result->fetch();
 

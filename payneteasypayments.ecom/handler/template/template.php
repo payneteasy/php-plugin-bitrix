@@ -22,6 +22,8 @@ switch ($params['ERROR']) {
         <p><?= Loc::getMessage('PAYNET_TEMPLATE_PAID_AMOUNT') ?> <strong><?= $params['AMOUNT'] ?></strong></p>
         <p><a href="/personal/"><?= Loc::getMessage('PAYNET_TEMPLATE_PERSONAL_LINK') ?></a></p>
     </div>
+<?php break; case 'PROCESSING': ?>
+    <p><a href="javascript:location.reload()"><?= Loc::getMessage('PAYNET_TEMPLATE_REFRESH_LINK') ?></a></p>
 <?php break; case 'OK': ?>
     <form action="<?= htmlspecialcharsbx($params['ACTION_URL']); ?>" method="<?= $params['PAYNET_PAYMENT_METHOD'] == 'direct' ? 'post' : 'get' ?>" class="payneteasy-form mb-2">
         <?php if ($params['PAYNET_PAYMENT_METHOD'] == 'direct') { ?>

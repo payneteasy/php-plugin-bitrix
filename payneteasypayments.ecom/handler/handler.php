@@ -207,7 +207,8 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 //            }
 
             if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
-                if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' && $order->getField('STATUS_ID') !== 'VC')) {
+                // A declined attempt (VC) does not block a later approved payment
+                if ($order->getField('STATUS_ID') !== 'P' && $order->getField('STATUS_ID') !== 'VR') {
                     $this->setTransaction($payment, 'Y', 'P');
                 }
                 LocalRedirect($successUrl, true);
@@ -224,7 +225,8 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
                 LocalRedirect($failUrl, true);
             } elseif (isset($paynetStatusOrder['status']) && in_array(trim($paynetStatusOrder['status']), ['declined', 'error', 'filtered'], true)) {
                 if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VC') {
-                    $this->setTransaction($payment, 'N', 'VC', 'Y');
+                    // Declined attempt: the order stays open for another payment
+                    $this->setTransaction($payment, 'N', 'VC');
                 }
                 LocalRedirect($failUrl, true);
             } else {
@@ -246,7 +248,8 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         ]);
 
         if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
-            if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' && $order->getField('STATUS_ID') !== 'VC')) {
+            // A declined attempt (VC) does not block a later approved payment
+                if ($order->getField('STATUS_ID') !== 'P' && $order->getField('STATUS_ID') !== 'VR') {
                 $this->setTransaction($payment, 'Y', 'P');
             }
             LocalRedirect($successUrl, true);
@@ -263,7 +266,8 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
             LocalRedirect($failUrl, true);
         } elseif (isset($paynetStatusOrder['status']) && in_array(trim($paynetStatusOrder['status']), ['declined', 'error', 'filtered'], true)) {
             if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VC') {
-                $this->setTransaction($payment, 'N', 'VC', 'Y');
+                // Declined attempt: the order stays open for another payment
+                    $this->setTransaction($payment, 'N', 'VC');
             }
             LocalRedirect($failUrl, true);
         } else {
@@ -333,7 +337,8 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         $paynetStatusOrder = $this->getOrderStatus($payment, $shopOrderId);
 
         if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
-            if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' && $order->getField('STATUS_ID') !== 'VC')) {
+            // A declined attempt (VC) does not block a later approved payment
+                if ($order->getField('STATUS_ID') !== 'P' && $order->getField('STATUS_ID') !== 'VR') {
                 $this->setTransaction($payment, 'Y', 'P');
             }
         } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'processing') {
@@ -347,7 +352,8 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
             }
         } elseif (isset($paynetStatusOrder['status']) && in_array(trim($paynetStatusOrder['status']), ['declined', 'error', 'filtered'], true)) {
             if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VC') {
-                $this->setTransaction($payment, 'N', 'VC', 'Y');
+                // Declined attempt: the order stays open for another payment
+                    $this->setTransaction($payment, 'N', 'VC');
             }
         } else {
             // status query failed or returned no final status: leave the order untouched

@@ -3,7 +3,7 @@
 namespace Paynet\Pay;
 
 use Bitrix\Main\ArgumentNullException;
-use Protobuf\Exception;
+use Exception;
 
 error_reporting(E_ALL);
 
@@ -238,10 +238,13 @@ class PaynetHandler
         $merchant_order_id = $response['merchant-order-id'];
 
         if (isset($paynet_order_id, $merchant_order_id) && ctype_digit((string)$paynet_order_id) && ctype_digit((string)$merchant_order_id)) {
-            $paynet_order_id = (int)$paynet_order_id;
+            // Gateway ids may exceed the 32-bit range: keep them as digit strings
+            $paynet_order_id = (string)$paynet_order_id;
             $merchant_order_id = (int)$merchant_order_id;
+            self::ensurePaymentsTable();
             $connection = \Bitrix\Main\Application::getConnection();
-            $sql = "INSERT IGNORE INTO `payneteasy_payments` (`paynet_order_id`, `merchant_order_id`) VALUES ($paynet_order_id, $merchant_order_id)";
+            // One row per payment attempt: the status is taken from the latest one
+            $sql = "INSERT INTO `payneteasy_payments` (`paynet_order_id`, `merchant_order_id`) VALUES ($paynet_order_id, $merchant_order_id)";
 
 //            $sql = "INSERT INTO payneteasy_payments (paynet_order_id, merchant_order_id)
 //SELECT * FROM (SELECT $paynet_order_id, $merchant_order_id) AS tmp
@@ -282,7 +285,8 @@ class PaynetHandler
                 $sandbox
             );
 
-            $sql = 'SELECT `paynet_order_id` FROM `payneteasy_payments` WHERE merchant_order_id='.$orderId;
+            self::ensurePaymentsTable();
+            $sql = 'SELECT `paynet_order_id` FROM `payneteasy_payments` WHERE merchant_order_id='.$orderId.' ORDER BY `id` DESC LIMIT 1';
             $result = \Bitrix\Main\Application::getConnection()->query($sql);
             $paynet_order_id = $result->fetch();
 
@@ -364,7 +368,8 @@ class PaynetHandler
                 ]
             ]);
 
-            $sql = 'SELECT `paynet_order_id` FROM `payneteasy_payments` WHERE merchant_order_id='.$orderId;
+            self::ensurePaymentsTable();
+            $sql = 'SELECT `paynet_order_id` FROM `payneteasy_payments` WHERE merchant_order_id='.$orderId.' ORDER BY `id` DESC LIMIT 1';
             $result = \Bitrix\Main\Application::getConnection()->query($sql);
             $paynet_order_id = $result->fetch();
 
@@ -467,5 +472,36 @@ class PaynetHandler
     private function signString($s, $merchantControl)
     {
         return sha1($s . $merchantControl);
+    }
+
+    /**
+     * Brings the payments table of earlier versions up to date:
+     * a key for the attempt order and 64-bit gateway ids.
+     */
+    public static function ensurePaymentsTable()
+    {
+        static $checked = false;
+        if ($checked) {
+            return;
+        }
+
+        $connection = \Bitrix\Main\Application::getConnection();
+        $columns = [];
+        $result = $connection->query('SHOW COLUMNS FROM `payneteasy_payments`');
+        while ($row = $result->fetch()) {
+            $columns[$row['Field']] = strtolower((string)$row['Type']);
+        }
+
+        if (!isset($columns['id'])) {
+            $connection->query('ALTER TABLE `payneteasy_payments` ADD `id` int unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST');
+        }
+        if (isset($columns['paynet_order_id']) && strpos($columns['paynet_order_id'], 'bigint') !== 0) {
+            $connection->query('ALTER TABLE `payneteasy_payments` MODIFY `paynet_order_id` bigint unsigned NOT NULL');
+        }
+        if (!isset($columns['id'])) {
+            $connection->query('ALTER TABLE `payneteasy_payments` ADD INDEX `merchant_order_id` (`merchant_order_id`)');
+        }
+
+        $checked = true;
     }
 }

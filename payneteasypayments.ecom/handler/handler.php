@@ -160,10 +160,11 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
             $this->params = $this->getPaymentParams($payment);
         }
 
-        $redirectUrl = '/personal/orders/'.$shopOrderId;
+        $redirectUrl = '/personal/orders/'.(int)$shopOrderId;
         $callbackUrl = '/bitrix/tools/sale_ps_result.php?ORDER_ID='.$shopOrderId;
-        $successUrl = '/bitrix/tools/sale_ps_success.php?ORDER_ID='.$shopOrderId;
-        $failUrl = '/bitrix/tools/sale_ps_fail.php?ORDER_ID='.$shopOrderId;
+        // After the status check the customer sees the order page with the payment status
+        $successUrl = '/personal/orders/'.(int)$shopOrderId;
+        $failUrl = $successUrl;
 
         $protocol = (empty($_SERVER['HTTPS']) ? 'http' : 'https');
         $host = \Paynet\Pay\PaynetHandler::getSiteHost();

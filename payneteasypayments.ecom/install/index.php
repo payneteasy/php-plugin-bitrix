@@ -166,6 +166,8 @@ class payneteasypayments_ecom extends CModule
         DeleteDirFilesEx($_SERVER['DOCUMENT_ROOT'] . BX_ROOT . '/' . $this->MODULE_SALE . '/');
         // Logotype
         DeleteDirFilesEx($_SERVER['DOCUMENT_ROOT'] . BX_ROOT . '/' . $this->MODULE_SALE . '.png');
+        // Customer return script
+        DeleteDirFilesEx(BX_ROOT . '/tools/payneteasy_return.php');
 
         return true;
     }

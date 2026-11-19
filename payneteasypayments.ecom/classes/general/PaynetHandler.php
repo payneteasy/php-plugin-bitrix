@@ -111,10 +111,15 @@ class PaynetHandler
             'cvv2' => $payneteasy_card_cvv??'',
         ];
 
-        $returnUrl = '/personal/orders/'.$orderId;
-        $callbackUrl = '/bitrix/tools/sale_ps_result.php?ORDER_ID='.$orderId;
-        $successUrl = '/bitrix/tools/sale_ps_success.php?ORDER_ID='.$orderId;
-        $failUrl = '/bitrix/tools/sale_ps_fail.php?ORDER_ID='.$orderId;
+        // The server callback goes to the result handler. The customer returns through
+        // a small script that keeps the session cookie (see payneteasy_return.php);
+        // the result handler then checks the payment status and shows the order page.
+        $callbackUrl = '/bitrix/tools/sale_ps_result.php?ORDER_ID='.(int)$orderId;
+        $returnUrl = self::ensureReturnScript()
+            ? '/bitrix/tools/payneteasy_return.php?ORDER_ID='.(int)$orderId
+            : $callbackUrl;
+        $successUrl = $returnUrl;
+        $failUrl = $returnUrl;
 
         $protocol = (empty($_SERVER['HTTPS']) ? 'http' : 'https');
         $host = self::getSiteHost($order->getSiteId());
@@ -503,5 +508,26 @@ class PaynetHandler
         }
 
         $checked = true;
+    }
+
+    /**
+     * Copies the customer return script to /bitrix/tools/ for modules installed
+     * by earlier versions.
+     *
+     * @return bool TRUE if the script is in place.
+     */
+    public static function ensureReturnScript()
+    {
+        $source = dirname(__DIR__, 2) . '/install/bitrix/tools/payneteasy_return.php';
+        $target = \Bitrix\Main\Application::getDocumentRoot() . '/bitrix/tools/payneteasy_return.php';
+
+        if (!is_file($source)) {
+            return is_file($target);
+        }
+        if (!is_file($target) || md5_file($source) !== md5_file($target)) {
+            @copy($source, $target);
+        }
+
+        return is_file($target) && md5_file($source) === md5_file($target);
     }
 }

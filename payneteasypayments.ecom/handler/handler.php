@@ -59,6 +59,20 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 
         $contextRequest = Context::getCurrent()->getRequest();
 
+        // Return from the payment form: show the payment result in the site layout
+        $isResultPage = $contextRequest->getQuery('PAYNET_RESULT') === '1';
+
+        if ($payment->isPaid()) {
+            // Paid: show the status, do not start another payment
+            $this->setExtraParams([
+                'ERROR' => 'PAID',
+                'ORDER_ID' => $orderId,
+                'AMOUNT' => CurrencyFormat($payment->getSum(), $this->order->getCurrency()),
+                'WINDOW' => $isResultPage,
+            ]);
+            return $this->showTemplate($payment, "template");
+        }
+
         $queryData = $contextRequest->getQueryList()->toArray(); // массив get параметров
 
         $this->logger->setOption('additionalCommonText', 'init-' . rand(1111, 9999));
@@ -115,8 +129,14 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         ];
 
         $args['WINDOW'] = false;
-        if ($this->params['PAYNET_NEW_WINDOW'] === 'Y') {
+        if ($this->params['PAYNET_NEW_WINDOW'] === 'Y' || $isResultPage) {
             $args['WINDOW'] = true;
+        }
+
+        // Back from the payment form, but the order is not paid
+        if ($isResultPage) {
+            $args['NOTICE'] = $this->order->getField('STATUS_ID') === 'VP' ? 'PROCESSING' : 'NOT_PAID';
+            $args['ORDER_ID'] = $orderId;
         }
 
         $this->setExtraParams($args);
@@ -160,10 +180,14 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
             $this->params = $this->getPaymentParams($payment);
         }
 
-        $redirectUrl = '/personal/orders/'.$shopOrderId;
+        $redirectUrl = '/personal/orders/'.(int)$shopOrderId;
         $callbackUrl = '/bitrix/tools/sale_ps_result.php?ORDER_ID='.$shopOrderId;
-        $successUrl = '/bitrix/tools/sale_ps_success.php?ORDER_ID='.$shopOrderId;
-        $failUrl = '/bitrix/tools/sale_ps_fail.php?ORDER_ID='.$shopOrderId;
+        // After the status check the customer sees the payment page with the result
+        // (a real page of the shop, it does not depend on the URL rewrite settings)
+        $successUrl = '/personal/order/payment/?ORDER_ID='.(int)$shopOrderId
+            .'&PAYMENT_ID='.urlencode((string)$payment->getField('ACCOUNT_NUMBER'))
+            .'&PAYNET_RESULT=1';
+        $failUrl = $successUrl;
 
         $protocol = (empty($_SERVER['HTTPS']) ? 'http' : 'https');
         $host = \Paynet\Pay\PaynetHandler::getSiteHost();
@@ -207,7 +231,8 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 //            }
 
             if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
-                if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' && $order->getField('STATUS_ID') !== 'VC')) {
+                // A declined attempt (VC) does not block a later approved payment
+                if ($order->getField('STATUS_ID') !== 'P' && $order->getField('STATUS_ID') !== 'VR') {
                     $this->setTransaction($payment, 'Y', 'P');
                 }
                 LocalRedirect($successUrl, true);
@@ -224,7 +249,8 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
                 LocalRedirect($failUrl, true);
             } elseif (isset($paynetStatusOrder['status']) && in_array(trim($paynetStatusOrder['status']), ['declined', 'error', 'filtered'], true)) {
                 if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VC') {
-                    $this->setTransaction($payment, 'N', 'VC', 'Y');
+                    // Declined attempt: the order stays open for another payment
+                    $this->setTransaction($payment, 'N', 'VC');
                 }
                 LocalRedirect($failUrl, true);
             } else {
@@ -246,7 +272,8 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         ]);
 
         if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
-            if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' && $order->getField('STATUS_ID') !== 'VC')) {
+            // A declined attempt (VC) does not block a later approved payment
+                if ($order->getField('STATUS_ID') !== 'P' && $order->getField('STATUS_ID') !== 'VR') {
                 $this->setTransaction($payment, 'Y', 'P');
             }
             LocalRedirect($successUrl, true);
@@ -263,7 +290,8 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
             LocalRedirect($failUrl, true);
         } elseif (isset($paynetStatusOrder['status']) && in_array(trim($paynetStatusOrder['status']), ['declined', 'error', 'filtered'], true)) {
             if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VC') {
-                $this->setTransaction($payment, 'N', 'VC', 'Y');
+                // Declined attempt: the order stays open for another payment
+                    $this->setTransaction($payment, 'N', 'VC');
             }
             LocalRedirect($failUrl, true);
         } else {
@@ -333,7 +361,8 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         $paynetStatusOrder = $this->getOrderStatus($payment, $shopOrderId);
 
         if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
-            if ($order->getField('STATUS_ID') !== 'P' && ($order->getField('STATUS_ID') !== 'VR' && $order->getField('STATUS_ID') !== 'VC')) {
+            // A declined attempt (VC) does not block a later approved payment
+                if ($order->getField('STATUS_ID') !== 'P' && $order->getField('STATUS_ID') !== 'VR') {
                 $this->setTransaction($payment, 'Y', 'P');
             }
         } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'processing') {
@@ -347,7 +376,8 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
             }
         } elseif (isset($paynetStatusOrder['status']) && in_array(trim($paynetStatusOrder['status']), ['declined', 'error', 'filtered'], true)) {
             if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VC') {
-                $this->setTransaction($payment, 'N', 'VC', 'Y');
+                // Declined attempt: the order stays open for another payment
+                    $this->setTransaction($payment, 'N', 'VC');
             }
         } else {
             // status query failed or returned no final status: leave the order untouched

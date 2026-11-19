@@ -11,8 +11,18 @@ if ($params['WINDOW']) {
     require($_SERVER["DOCUMENT_ROOT"]."/bitrix/header.php");
 }
 
+if (!empty($params['NOTICE'])) { ?>
+    <p class="payneteasy-notice mb-2"><b><?= Loc::getMessage('PAYNET_TEMPLATE_NOTICE_' . $params['NOTICE'], ['#ORDER_ID#' => (int)$params['ORDER_ID']]) ?></b></p>
+<?php }
+
 switch ($params['ERROR']) {
-    case 'OK': ?>
+    case 'PAID': ?>
+    <div class="payneteasy-result mb-2">
+        <p><b><?= Loc::getMessage('PAYNET_TEMPLATE_ORDER_PAID', ['#ORDER_ID#' => (int)$params['ORDER_ID']]) ?></b></p>
+        <p><?= Loc::getMessage('PAYNET_TEMPLATE_PAID_AMOUNT') ?> <strong><?= $params['AMOUNT'] ?></strong></p>
+        <p><a href="/personal/"><?= Loc::getMessage('PAYNET_TEMPLATE_PERSONAL_LINK') ?></a></p>
+    </div>
+<?php break; case 'OK': ?>
     <form action="<?= htmlspecialcharsbx($params['ACTION_URL']); ?>" method="<?= $params['PAYNET_PAYMENT_METHOD'] == 'direct' ? 'post' : 'get' ?>" class="payneteasy-form mb-2">
         <?php if ($params['PAYNET_PAYMENT_METHOD'] == 'direct') { ?>
             <div class="paynet_direct_form">

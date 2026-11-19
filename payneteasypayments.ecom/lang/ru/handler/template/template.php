@@ -17,4 +17,9 @@ $MESS = [
     'PAYNET_TEMPLATE_ERROR_CREDENTAIL' => 'Клиентские ИД или Секрет были указаны неверно.',
     'PAYNET_TEMPLATE_ERROR_GLOBAL' => 'В настоящее время платеж невозможен. Повторите попытку позднее.',
     'PAYNET_TEMPLATE_ERROR_DEFAULT' => 'Что-то пошло не так.',
+    'PAYNET_TEMPLATE_ORDER_PAID' => 'Заказ №#ORDER_ID# оплачен.',
+    'PAYNET_TEMPLATE_PAID_AMOUNT' => 'Оплачено:',
+    'PAYNET_TEMPLATE_PERSONAL_LINK' => 'Перейти в личный кабинет',
+    'PAYNET_TEMPLATE_NOTICE_NOT_PAID' => 'Оплата заказа №#ORDER_ID# не прошла. Вы можете повторить оплату.',
+    'PAYNET_TEMPLATE_NOTICE_PROCESSING' => 'Платёж по заказу №#ORDER_ID# обрабатывается. Обновите страницу через минуту.',
 ];

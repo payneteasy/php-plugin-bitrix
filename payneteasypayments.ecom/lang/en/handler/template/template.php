@@ -17,4 +17,9 @@ $MESS = [
     'PAYNET_TEMPLATE_ERROR_CREDENTAIL' => 'Login or Secret was specified incorrectly.',
     'PAYNET_TEMPLATE_ERROR_GLOBAL' => 'Payment is not possible at this time. Please try again later.',
     'PAYNET_TEMPLATE_ERROR_DEFAULT' => 'Something went wrong.',
+    'PAYNET_TEMPLATE_ORDER_PAID' => 'Order ##ORDER_ID# has been paid.',
+    'PAYNET_TEMPLATE_PAID_AMOUNT' => 'Paid:',
+    'PAYNET_TEMPLATE_PERSONAL_LINK' => 'Go to your account',
+    'PAYNET_TEMPLATE_NOTICE_NOT_PAID' => 'The payment for order ##ORDER_ID# did not go through. You can pay again.',
+    'PAYNET_TEMPLATE_NOTICE_PROCESSING' => 'The payment for order ##ORDER_ID# is being processed. Refresh the page in a minute.',
 ];

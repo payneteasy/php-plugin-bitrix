@@ -41,13 +41,16 @@ class PaynetHandler
     public function getPaynetPaymentResponse(
         $order,
         $params,
-        $orderId
+        $orderId,
+        $payment = null
     ) {
         self::$logger = PaynetEasyLogger::getInstance();
 
         $propertyCollection = $order->getPropertyCollection();
         $orderCreate = $order->getDateInsert()->getTimestamp();
-        $amount = $order->getPrice();
+        // Charge this payment of the order (an order may be paid in several payments)
+        $amount = number_format((float)($payment ? $payment->getSum() : $order->getPrice()), 2, '.', '');
+        $saleCurrency = ($payment && $payment->getField('CURRENCY')) ? $payment->getField('CURRENCY') : $order->getCurrency();
 
         $email = '';
         if ($propEmail = $propertyCollection->getUserEmail()) {
@@ -133,7 +136,7 @@ class PaynetHandler
             'client_orderid' => (string)$orderId,
             'order_desc' => 'Order # ' . $orderId,
             'amount' => $amount,
-            'currency' => $order->getCurrency(),
+            'currency' => $saleCurrency,
             'address1' => $address,
             'city' => $city,
             'zip_code' => $propertyCollection->getDeliveryLocationZip()->getValue(),
@@ -537,7 +540,7 @@ class PaynetHandler
         $base = '';
         $base .= $endpointId;
         $base .= $data['client_orderid'];
-        $base .= $data['amount'] * 100;
+        $base .= (int)round($data['amount'] * 100);
         $base .= $data['email'];
 
         return $this->signString($base, $merchantControl);

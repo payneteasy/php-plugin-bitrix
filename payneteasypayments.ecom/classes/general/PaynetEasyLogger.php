@@ -130,14 +130,14 @@ class PaynetEasyLogger
                 $this->writeToFile($message);
             }
         } catch (\Exception | PaynetEasyException $e) {
-            // Обработка ошибки записи в файл
+            // Handle a file write error
             error_log($e->getMessage());
         }
     }
     
     
     /**
-     * Простая запись в файл.
+     * Plain write to the file.
      *
      * @param string $message The log message.
      *
@@ -295,7 +295,7 @@ class PaynetEasyLogger
      */
     private function maskSensitiveData(array $context): array
     {
-        // Маскируем данные в data
+        // Mask the values in data
         $dataKeys = ['client_id', 'client_secret', 'login', 'pass'];
         foreach ($dataKeys as $key) {
             if (isset($context['data'][$key])) {
@@ -303,7 +303,7 @@ class PaynetEasyLogger
             }
         }
 
-        // Заменяем токены на количество символов в response
+        // Replace tokens in response with their length
         $responseKeys = ['access_token', 'token'];
         foreach ($responseKeys as $key) {
             if (isset($context['response'][$key])) {
@@ -311,7 +311,7 @@ class PaynetEasyLogger
             }
         }
 
-        // Маскируем данные в headers
+        // Mask the values in headers
         if (isset($context['headers'])) {
             foreach ($context['headers'] as $key => $header) {
                 if (strpos($header, 'X-IBM-Client-Id: ') === 0) {

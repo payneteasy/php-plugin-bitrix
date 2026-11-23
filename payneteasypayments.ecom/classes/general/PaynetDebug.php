@@ -145,30 +145,30 @@ class paynetDebug {
     {
         $perms = fileperms($target);
         switch ($perms & 0xF000) {
-            case 0xC000: $info = 's'; break; // сокет
-            case 0xA000: $info = 'l'; break; // символическая ссылка
-            case 0x8000: $info = 'r'; break; // обычный
-            case 0x6000: $info = 'b'; break; // файл блочного устройства
-            case 0x4000: $info = 'd'; break; // каталог
-            case 0x2000: $info = 'c'; break; // файл символьного устройства
-            case 0x1000: $info = 'p'; break; // FIFO канал
-            default: $info = 'u'; // неизвестный
+            case 0xC000: $info = 's'; break; // socket
+            case 0xA000: $info = 'l'; break; // symbolic link
+            case 0x8000: $info = 'r'; break; // regular file
+            case 0x6000: $info = 'b'; break; // block device
+            case 0x4000: $info = 'd'; break; // directory
+            case 0x2000: $info = 'c'; break; // character device
+            case 0x1000: $info = 'p'; break; // FIFO pipe
+            default: $info = 'u'; // unknown
         }
 
         $chmod = sprintf('%o', $perms & 0777);
 
 
-        // Владелец
+        // Owner
         $info .= (($perms & 0x0100) ? 'r' : '-');
         $info .= (($perms & 0x0080) ? 'w' : '-');
         $info .= (($perms & 0x0040) ? (($perms & 0x0800) ? 's' : 'x' ) : (($perms & 0x0800) ? 'S' : '-'));
 
-        // Группа
+        // Group
         $info .= (($perms & 0x0020) ? 'r' : '-');
         $info .= (($perms & 0x0010) ? 'w' : '-');
         $info .= (($perms & 0x0008) ? (($perms & 0x0400) ? 's' : 'x' ) : (($perms & 0x0400) ? 'S' : '-'));
 
-        // Мир
+        // Others
         $info .= (($perms & 0x0004) ? 'r' : '-');
         $info .= (($perms & 0x0002) ? 'w' : '-');
         $info .= (($perms & 0x0001) ? (($perms & 0x0200) ? 't' : 'x' ) : (($perms & 0x0200) ? 'T' : '-'));
@@ -422,7 +422,7 @@ class paynetDebug {
             // lock many sends
             file_put_contents($_SERVER['DOCUMENT_ROOT'] . BX_ROOT . '/tmp/paynet.lock', time());
 
-            // Отправляем письмо
+            // Send the email
             if(mail($to, $subject, $message, $headers)) {
                 echo \CAdminMessage::ShowMessage([
                     'MESSAGE' => 'Отправка логов',

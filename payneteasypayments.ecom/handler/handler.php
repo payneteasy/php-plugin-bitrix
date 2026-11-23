@@ -115,7 +115,8 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
                 $paynetPaymentResponse = $PaynetHandler->getPaynetPaymentResponse(
                     $this->order,
                     $this->params,
-                    $orderId
+                    $orderId,
+                    $payment
                 );
                 $redirectUrl = $paynetPaymentResponse['redirect-url'] ?? '';
             }
@@ -222,7 +223,8 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
                 $paynetPaymentResponse = $PaynetHandler->getPaynetPaymentResponse(
                     $order,
                     $this->params,
-                    $shopOrderId
+                    $shopOrderId,
+                    $payment
                 );
                 $this->logger->debug(
                     __FUNCTION__ . ' > direct: ', [
@@ -250,7 +252,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 //                echo $paynetStatusOrder['html'];
 //            }
 
-            if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
+            if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved' && $this->isPaidInFull($payment, $paynetStatusOrder)) {
                 // A declined attempt (VC) does not block a later approved payment
                 if ($order->getField('STATUS_ID') !== 'P' && $order->getField('STATUS_ID') !== 'VR') {
                     $this->setTransaction($payment, 'Y', 'P');
@@ -298,7 +300,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
             ]
         ]);
 
-        if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
+        if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved' && $this->isPaidInFull($payment, $paynetStatusOrder)) {
             // A declined attempt (VC) does not block a later approved payment
                 if ($order->getField('STATUS_ID') !== 'P' && $order->getField('STATUS_ID') !== 'VR') {
                 $this->setTransaction($payment, 'Y', 'P');
@@ -387,7 +389,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 
         $paynetStatusOrder = $this->getOrderStatus($payment, $shopOrderId);
 
-        if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved') {
+        if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved' && $this->isPaidInFull($payment, $paynetStatusOrder)) {
             // A declined attempt (VC) does not block a later approved payment
                 if ($order->getField('STATUS_ID') !== 'P' && $order->getField('STATUS_ID') !== 'VR') {
                 $this->setTransaction($payment, 'Y', 'P');
@@ -504,6 +506,24 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         );
 
         return $response;
+    }
+
+
+    /**
+     * True if the approved sale covers this payment: same amount and currency.
+     * Otherwise the payment is not marked paid (the order may have been changed).
+     */
+    private function isPaidInFull($payment, array $status): bool
+    {
+        $amount = trim((string)($status['amount'] ?? ''));
+        $currency = strtoupper(trim((string)($status['currency'] ?? '')));
+        $paid = is_numeric($amount)
+            && $currency === strtoupper((string)($payment->getField('CURRENCY') ?: $payment->getCollection()->getOrder()->getCurrency()))
+            && (int)round((float)$amount * 100) === (int)round((float)$payment->getSum() * 100);
+        if (!$paid) {
+            $this->logger->error("Order {$payment->getOrderId()}: approved {$amount} {$currency} does not match the payment {$payment->getSum()}, not marked paid");
+        }
+        return $paid;
     }
 
 

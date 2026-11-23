@@ -73,7 +73,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
             return $this->showTemplate($payment, "template");
         }
 
-        $queryData = $contextRequest->getQueryList()->toArray(); // массив get параметров
+        $queryData = $contextRequest->getQueryList()->toArray(); // GET parameters
 
         $this->logger->setOption('additionalCommonText', 'init-' . rand(1111, 9999));
 

@@ -219,6 +219,14 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
                 $this->logger->error("Order {$shopOrderId}: card payment request not from the order customer, ignored");
                 $hasCard = false;
             }
+            // A repeated submit of the card form must not send another sale
+            if ($hasCard) {
+                $priorStatus = $payment->isPaid() ? 'approved' : trim((string)($this->getOrderStatus($payment, $shopOrderId)['status'] ?? ''));
+                if ($priorStatus === 'approved' || $priorStatus === 'processing') {
+                    $this->logger->error("Order {$shopOrderId}: a payment attempt is already {$priorStatus}, the card form is not sent again");
+                    $hasCard = false;
+                }
+            }
             if ($hasCard) {
                 $paynetPaymentResponse = $PaynetHandler->getPaynetPaymentResponse(
                     $order,
@@ -253,8 +261,9 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 //            }
 
             if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved' && $this->isPaidInFull($payment, $paynetStatusOrder)) {
-                // A declined attempt (VC) does not block a later approved payment
-                if ($order->getField('STATUS_ID') !== 'P' && $order->getField('STATUS_ID') !== 'VR') {
+                // A declined attempt (VC) does not block a later approved payment;
+            // a paid payment and the order status set since then are left as they are
+                if (!$payment->isPaid() && $order->getField('STATUS_ID') !== 'VR') {
                     $this->setTransaction($payment, 'Y', 'P');
                 }
                 LocalRedirect($successUrl, true);
@@ -301,8 +310,9 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         ]);
 
         if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved' && $this->isPaidInFull($payment, $paynetStatusOrder)) {
-            // A declined attempt (VC) does not block a later approved payment
-                if ($order->getField('STATUS_ID') !== 'P' && $order->getField('STATUS_ID') !== 'VR') {
+            // A declined attempt (VC) does not block a later approved payment;
+            // a paid payment and the order status set since then are left as they are
+                if (!$payment->isPaid() && $order->getField('STATUS_ID') !== 'VR') {
                 $this->setTransaction($payment, 'Y', 'P');
             }
             LocalRedirect($successUrl, true);
@@ -390,8 +400,9 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         $paynetStatusOrder = $this->getOrderStatus($payment, $shopOrderId);
 
         if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved' && $this->isPaidInFull($payment, $paynetStatusOrder)) {
-            // A declined attempt (VC) does not block a later approved payment
-                if ($order->getField('STATUS_ID') !== 'P' && $order->getField('STATUS_ID') !== 'VR') {
+            // A declined attempt (VC) does not block a later approved payment;
+            // a paid payment and the order status set since then are left as they are
+                if (!$payment->isPaid() && $order->getField('STATUS_ID') !== 'VR') {
                 $this->setTransaction($payment, 'Y', 'P');
             }
         } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'processing') {
@@ -517,6 +528,11 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
     {
         $amount = trim((string)($status['amount'] ?? ''));
         $currency = strtoupper(trim((string)($status['currency'] ?? '')));
+        // An approved reversal is not a payment
+        if (in_array(strtolower(trim((string)($status['transaction-type'] ?? ''))), ['reversal', 'chargeback'], true)) {
+            $this->logger->error("Order {$payment->getOrderId()}: the approved transaction is a reversal, not marked paid");
+            return false;
+        }
         $paid = is_numeric($amount)
             && $currency === strtoupper((string)($payment->getField('CURRENCY') ?: $payment->getCollection()->getOrder()->getCurrency()))
             && (int)round((float)$amount * 100) === (int)round((float)$payment->getSum() * 100);

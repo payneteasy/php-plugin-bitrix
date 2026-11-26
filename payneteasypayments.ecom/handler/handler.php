@@ -110,7 +110,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         if ($this->params['PAYNET_PAYMENT_METHOD'] == 'form') {
             // The form of the previous attempt still waits for the card: use it,
             // do not start another sale for the same order
-            $redirectUrl = PaynetHandler::getOpenPaymentForm($this->params, $orderId);
+            $redirectUrl = PaynetHandler::getOpenPaymentForm($this->params, $orderId, $payment->getId(), $this->useLegacyAttempts($payment));
             if ($redirectUrl === null && isset($orderId)) {
                 $paynetPaymentResponse = $PaynetHandler->getPaynetPaymentResponse(
                     $this->order,
@@ -121,12 +121,15 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
                 $redirectUrl = $paynetPaymentResponse['redirect-url'] ?? '';
             }
         } elseif ($this->params['PAYNET_PAYMENT_METHOD'] == 'direct') {
-            $callbackUrl = '/bitrix/tools/sale_ps_result.php?ORDER_ID='.$orderId??$payment->getOrderId();
+            // The card form names the payment: an order may have several payments
+            $formQuery = '?ORDER_ID='.(int)$orderId.'&PAYNET_PAYMENT='.(int)$payment->getId();
+            $callbackUrl = '/bitrix/tools/sale_ps_result.php'.$formQuery;
             $protocol = (empty($_SERVER['HTTPS']) ? 'http' : 'https');
             $host = \Paynet\Pay\PaynetHandler::getSiteHost();
             $redirectUrl = "{$protocol}://{$host}{$callbackUrl}";
-            if ($this->params['PAYNET_THREE_D_SECURE'] == 'Y') {
-                $redirectUrl = '/bitrix/modules/payneteasypayments.ecom/3ds.php?orderId='.$orderId??$payment->getOrderId();
+            // With 3-D Secure the form goes to the module's own script in /bitrix/tools/
+            if ($this->params['PAYNET_THREE_D_SECURE'] == 'Y' && PaynetHandler::ensureThreeDSecureScript()) {
+                $redirectUrl = '/bitrix/tools/payneteasy_3ds.php'.$formQuery;
                 $redirectUrl = "{$protocol}://{$host}{$redirectUrl}";
             }
         }
@@ -165,8 +168,6 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         $this->setPayneteasyLogger();
 
         $shopOrderId = self::getRequestOrderId($request);
-        $paynetOrderId = $request['orderid']??'';
-        $status = $request['status']??'';
 
         if ($shopOrderId <= 0) {
             return false;
@@ -176,17 +177,7 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         if (!$order) {
             return false;
         }
-        // Use the order's existing PaynetEasy payment; creating a new one on every
-        // return or callback left the original payment unpaid and added duplicates
-        $payment = null;
-        foreach ($order->getPaymentCollection() as $item) {
-            if ($item->getPaySystem() && $item->getPaySystem()->getField('ACTION_FILE') === 'payneteasypayments') {
-                $payment = $item;
-                if (!$item->isPaid()) {
-                    break;
-                }
-            }
-        }
+        $payment = self::findRequestPayment($order, $request);
         if ($payment === null) {
             return false;
         }
@@ -195,8 +186,6 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
             $this->params = $this->getPaymentParams($payment);
         }
 
-        $redirectUrl = '/personal/orders/'.(int)$shopOrderId;
-        $callbackUrl = '/bitrix/tools/sale_ps_result.php?ORDER_ID='.$shopOrderId;
         // After the status check the customer sees the payment page with the result
         // (a real page of the shop, it does not depend on the URL rewrite settings)
         $successUrl = '/personal/order/payment/?ORDER_ID='.(int)$shopOrderId
@@ -206,42 +195,64 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 
         $protocol = (empty($_SERVER['HTTPS']) ? 'http' : 'https');
         $host = \Paynet\Pay\PaynetHandler::getSiteHost();
-        $redirectUrl = "{$protocol}://{$host}{$redirectUrl}";
-        $callbackUrl = "{$protocol}://{$host}{$callbackUrl}";
         $successUrl = "{$protocol}://{$host}{$successUrl}";
         $failUrl = "{$protocol}://{$host}{$failUrl}";
 
-        if ($this->params['PAYNET_PAYMENT_METHOD'] == 'direct') {
-            $PaynetHandler = new PaynetHandler();
-            $hasCard = isset($_POST['expire_year']) && isset($_POST['expire_month']) && isset($_POST['credit_card_number']) && isset($_POST['card_printed_name']) && isset($_POST['cvv2']);
-            // Only the customer of the order may start a payment with a card
-            if ($hasCard && !PaynetHandler::isOrderOwnerRequest($order)) {
-                $this->logger->error("Order {$shopOrderId}: card payment request not from the order customer, ignored");
-                $hasCard = false;
+        // The customer return and the gateway callback come at the same time:
+        // one request at a time checks and changes an order.
+        if (!PaynetHandler::lockOrder($shopOrderId)) {
+            $this->logger->error("Order {$shopOrderId}: another request is processing the order, order not changed");
+            LocalRedirect($failUrl, true);
+            return false;
+        }
+
+        $status = '';
+        $html = '';
+        try {
+            // The order may have been changed while waiting for the lock: read it again
+            $paymentId = $payment->getId();
+            $order = Order::load($shopOrderId);
+            $payment = $order ? $order->getPaymentCollection()->getItemById($paymentId) : null;
+            if (!$payment) {
+                return false;
             }
-            // A repeated submit of the card form must not send another sale
-            if ($hasCard) {
-                $priorStatus = $payment->isPaid() ? 'approved' : trim((string)($this->getOrderStatus($payment, $shopOrderId)['status'] ?? ''));
-                if ($priorStatus === 'approved' || $priorStatus === 'processing') {
-                    $this->logger->error("Order {$shopOrderId}: a payment attempt is already {$priorStatus}, the card form is not sent again");
+
+            $isDirect = $this->params['PAYNET_PAYMENT_METHOD'] == 'direct';
+
+            if ($isDirect) {
+                $PaynetHandler = new PaynetHandler();
+                $hasCard = isset($_POST['expire_year']) && isset($_POST['expire_month']) && isset($_POST['credit_card_number']) && isset($_POST['card_printed_name']) && isset($_POST['cvv2']);
+                // Only the customer of the order may start a payment with a card
+                if ($hasCard && !PaynetHandler::isOrderOwnerRequest($order)) {
+                    $this->logger->error("Order {$shopOrderId}: card payment request not from the order customer, ignored");
                     $hasCard = false;
                 }
+                // A repeated submit of the card form must not send another sale
+                if ($hasCard) {
+                    $priorStatus = $payment->isPaid() ? 'approved' : trim((string)($this->getOrderStatus($payment, $shopOrderId)['status'] ?? ''));
+                    if ($priorStatus === 'approved' || $priorStatus === 'processing') {
+                        $this->logger->error("Order {$shopOrderId}: a payment attempt is already {$priorStatus}, the card form is not sent again");
+                        $hasCard = false;
+                    }
+                }
+                if ($hasCard) {
+                    $paynetPaymentResponse = $PaynetHandler->getPaynetPaymentResponse(
+                        $order,
+                        $this->params,
+                        $shopOrderId,
+                        $payment
+                    );
+                    $this->logger->debug(
+                        __FUNCTION__ . ' > direct: ', [
+                        'arguments' => [
+                            'paynetPaymentResponse' => $paynetPaymentResponse,
+                        ]
+                    ]);
+                }
             }
-            if ($hasCard) {
-                $paynetPaymentResponse = $PaynetHandler->getPaynetPaymentResponse(
-                    $order,
-                    $this->params,
-                    $shopOrderId,
-                    $payment
-                );
-                $this->logger->debug(
-                    __FUNCTION__ . ' > direct: ', [
-                    'arguments' => [
-                        'paynetPaymentResponse' => $paynetPaymentResponse,
-                    ]
-                ]);
-            }
+
             $paynetStatusOrder = $this->getOrderStatus($payment, $shopOrderId);
+
             $this->logger->debug(
                 __FUNCTION__ . ' > direct: ', [
                 'arguments' => [
@@ -249,101 +260,113 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
                 ]
             ]);
 
-//            if ($this->params['PAYNET_THREE_D_SECURE'] == 'Y') {
-//                $paynetStatusOrder = $this->getOrderStatus($payment, $orderId??$payment->getOrderId());
-//                $this->logger->debug(
-//                    __FUNCTION__ . ' > direct 3ds: ', [
-//                    'arguments' => [
-//                        'paynetStatusOrder' => $paynetStatusOrder,
-//                    ]
-//                ]);
-//                echo $paynetStatusOrder['html'];
-//            }
+            $status = $this->applyPaymentStatus($order, $payment, $paynetStatusOrder, $shopOrderId);
 
-            if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved' && $this->isPaidInFull($payment, $paynetStatusOrder)) {
-                // A declined attempt (VC) does not block a later approved payment;
-            // a paid payment and the order status set since then are left as they are
-                if (!$payment->isPaid() && $order->getField('STATUS_ID') !== 'VR') {
-                    $this->setTransaction($payment, 'Y', 'P');
-                }
-                LocalRedirect($successUrl, true);
-            } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'processing') {
-                // processing is not a final status: keep the payment unpaid, mark as pending
-                if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VP') {
-                    $this->setTransaction($payment, 'N', 'VP');
-                }
-                // The gateway asks for 3-D Secure: show its page, it returns the customer here
-                if (!empty($paynetStatusOrder['html'])) {
-                    echo $paynetStatusOrder['html'];
-                    die();
-                }
-                // Otherwise show the result page ("being processed"); redirecting back
-                // to this handler would loop while the gateway keeps the status
-                LocalRedirect($successUrl, true);
-            } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'refunded') {
-                if ($order->getField('STATUS_ID') !== 'VR') {
-                    $this->setTransaction($payment, 'N', 'VR', 'Y');
-                }
-                LocalRedirect($failUrl, true);
-            } elseif (isset($paynetStatusOrder['status']) && in_array(trim($paynetStatusOrder['status']), ['declined', 'error', 'filtered'], true)) {
-                if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VC') {
-                    // Declined attempt: the order stays open for another payment
-                    $this->setTransaction($payment, 'N', 'VC');
-                }
-                LocalRedirect($failUrl, true);
-            } else {
-                // status query failed or returned no final status: leave the order untouched
-                $this->logger->error("Order {$shopOrderId}: no final status from gateway, order not changed");
-                LocalRedirect($failUrl, true);
+            // The gateway asks for 3-D Secure: show its page, it returns the customer here
+            if ($isDirect && $status === 'processing' && !empty($paynetStatusOrder['html'])) {
+                $html = $paynetStatusOrder['html'];
             }
-
+        } finally {
+            PaynetHandler::unlockOrder($shopOrderId);
         }
 
+        if ($html !== '') {
+            echo $html;
+            die();
+        }
 
-        $paynetStatusOrder = $this->getOrderStatus($payment, $shopOrderId);
+        // Show the result page (for a payment in progress: "being processed";
+        // redirecting back to this handler would loop while the gateway keeps the status)
+        LocalRedirect(in_array($status, ['approved', 'processing'], true) ? $successUrl : $failUrl, true);
 
-        $this->logger->debug(
-            __FUNCTION__ . ' > direct: ', [
-            'arguments' => [
-                'paynetStatusOrder' => $paynetStatusOrder,
-            ]
-        ]);
+        return false;
+    }
 
-        if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved' && $this->isPaidInFull($payment, $paynetStatusOrder)) {
+
+    /**
+     * The payment of the order this request is about: the one named by the
+     * plugin's own URLs, otherwise the order's unpaid PaynetEasy payment.
+     */
+    private static function findRequestPayment($order, Request $request)
+    {
+        $collection = $order->getPaymentCollection();
+
+        $requested = $request->get('PAYNET_PAYMENT');
+        if (is_scalar($requested) && ctype_digit((string)$requested)) {
+            $item = $collection->getItemById((int)$requested);
+            if ($item && self::isPaynetPayment($item)) {
+                return $item;
+            }
+        }
+
+        // Use the order's existing PaynetEasy payment; creating a new one on every
+        // return or callback left the original payment unpaid and added duplicates
+        $payment = null;
+        foreach ($collection as $item) {
+            if (self::isPaynetPayment($item)) {
+                $payment = $item;
+                if (!$item->isPaid()) {
+                    break;
+                }
+            }
+        }
+
+        return $payment;
+    }
+
+
+    private static function isPaynetPayment($payment): bool
+    {
+        return $payment->getPaySystem() && $payment->getPaySystem()->getField('ACTION_FILE') === 'payneteasypayments';
+    }
+
+
+    /**
+     * Applies the gateway status to the payment and the order.
+     * Called under the order lock, with the order just read from the database.
+     *
+     * @return string approved, processing, refunded or declined; empty when there is no final answer
+     */
+    private function applyPaymentStatus($order, $payment, $paynetStatusOrder, $shopOrderId): string
+    {
+        $status = isset($paynetStatusOrder['status']) ? trim((string)$paynetStatusOrder['status']) : '';
+
+        if ($status === 'approved' && $this->isPaidInFull($payment, $paynetStatusOrder)) {
             // A declined attempt (VC) does not block a later approved payment;
             // a paid payment and the order status set since then are left as they are
-                if (!$payment->isPaid() && $order->getField('STATUS_ID') !== 'VR') {
+            if (!$payment->isPaid() && $order->getField('STATUS_ID') !== 'VR') {
                 $this->setTransaction($payment, 'Y', 'P');
             }
-            LocalRedirect($successUrl, true);
-        } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'processing') {
+            return 'approved';
+        }
+
+        if ($status === 'processing') {
             // processing is not a final status: keep the payment unpaid, mark as pending
             if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VP') {
                 $this->setTransaction($payment, 'N', 'VP');
             }
-            LocalRedirect($successUrl, true);
-        } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'refunded') {
+            return 'processing';
+        }
+
+        if ($status === 'refunded') {
             if ($order->getField('STATUS_ID') !== 'VR') {
                 $this->setTransaction($payment, 'N', 'VR', 'Y');
             }
-            LocalRedirect($failUrl, true);
-        } elseif (isset($paynetStatusOrder['status']) && in_array(trim($paynetStatusOrder['status']), ['declined', 'error', 'filtered'], true)) {
+            return 'refunded';
+        }
+
+        if (in_array($status, ['declined', 'error', 'filtered'], true)) {
             if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VC') {
                 // Declined attempt: the order stays open for another payment
-                    $this->setTransaction($payment, 'N', 'VC');
+                $this->setTransaction($payment, 'N', 'VC');
             }
-            LocalRedirect($failUrl, true);
-        } else {
-            // status query failed or returned no final status: leave the order untouched
-            $this->logger->error("Order {$shopOrderId}: no final status from gateway, order not changed");
-            LocalRedirect($failUrl, true);
+            return 'declined';
         }
-        $paymentId = $request->get('ORDER');
 
-        if (isset($paymentId))
-            $paymentId = preg_replace("/^[0]+/","",$paymentId);
+        // status query failed or returned no final status: leave the order untouched
+        $this->logger->error("Order {$shopOrderId}: no final status from gateway, order not changed");
 
-        return intval($paymentId);
+        return '';
     }
 
 
@@ -395,34 +418,23 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
 
         $shopOrderId = self::getRequestOrderId($request) ?: (int)$payment->getOrderId();
 
-        $order = Order::load($shopOrderId);
-
-        $paynetStatusOrder = $this->getOrderStatus($payment, $shopOrderId);
-
-        if (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'approved' && $this->isPaidInFull($payment, $paynetStatusOrder)) {
-            // A declined attempt (VC) does not block a later approved payment;
-            // a paid payment and the order status set since then are left as they are
-                if (!$payment->isPaid() && $order->getField('STATUS_ID') !== 'VR') {
-                $this->setTransaction($payment, 'Y', 'P');
-            }
-        } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'processing') {
-            // processing is not a final status: keep the payment unpaid, mark as pending
-            if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VP') {
-                $this->setTransaction($payment, 'N', 'VP');
-            }
-        } elseif (isset($paynetStatusOrder['status']) && trim($paynetStatusOrder['status']) == 'refunded') {
-            if ($order->getField('STATUS_ID') !== 'VR') {
-                $this->setTransaction($payment, 'N', 'VR', 'Y');
-            }
-        } elseif (isset($paynetStatusOrder['status']) && in_array(trim($paynetStatusOrder['status']), ['declined', 'error', 'filtered'], true)) {
-            if (!$order->isPaid() && $order->getField('STATUS_ID') !== 'VC') {
-                // Declined attempt: the order stays open for another payment
-                    $this->setTransaction($payment, 'N', 'VC');
-            }
-        } else {
-            // status query failed or returned no final status: leave the order untouched
-            $this->logger->error("Order {$shopOrderId}: no final status from gateway, order not changed");
+        if (!PaynetHandler::lockOrder($shopOrderId)) {
+            $this->logger->error("Order {$shopOrderId}: another request is processing the order, order not changed");
+            return 'ok';
         }
+
+        try {
+            // The order may have been changed while waiting for the lock: read it again
+            $order = Order::load($shopOrderId);
+            $payment = $order ? $order->getPaymentCollection()->getItemById($payment->getId()) : null;
+            if ($payment) {
+                $paynetStatusOrder = $this->getOrderStatus($payment, $shopOrderId);
+                $this->applyPaymentStatus($order, $payment, $paynetStatusOrder, $shopOrderId);
+            }
+        } finally {
+            PaynetHandler::unlockOrder($shopOrderId);
+        }
+
         return 'ok';
     }
 
@@ -441,10 +453,19 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         }
 
         $sum = (float)$refundableSum > 0 ? $refundableSum : $payment->getSum();
-        $refund = PaynetHandler::setPaymentRefund($this->params, $payment->getOrderId(), $sum, $payment->getField('CURRENCY'));
+        $refund = PaynetHandler::setPaymentRefund($this->params, $payment->getOrderId(), $sum, $payment->getField('CURRENCY'), $payment->getId());
 
         if (isset($refund['error-code'])) {
             $result->addError(new Error((string)$refund['error-message']));
+            return $result;
+        }
+
+        // The gateway accepted the request but has not confirmed the refund yet.
+        // This is not an error (the request must not be sent again) and not a
+        // completed refund: the payment stays paid, the order is marked for the admin.
+        if (($refund['refund-state'] ?? '') !== 'approved') {
+            $this->logger->error("Order {$payment->getOrderId()}: refund accepted by the gateway, result unknown");
+            $this->markRefundPending($payment);
             return $result;
         }
 
@@ -457,6 +478,43 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
         }
 
         return $result;
+    }
+
+
+    /**
+     * Tells the admin (a marker on the order) that the refund result is unknown.
+     */
+    private function markRefundPending(Payment $payment): void
+    {
+        try {
+            $warning = new \Bitrix\Sale\Result();
+            $warning->addWarning(new \Bitrix\Sale\ResultWarning(
+                'PaynetEasy: the refund request was accepted by the gateway, the result is not known yet.'
+                . ' Do not send it again: check the transaction in the PaynetEasy back office.',
+                'PAYNET_REFUND_RESULT_UNKNOWN'
+            ));
+            \Bitrix\Sale\EntityMarker::addMarker($payment->getCollection()->getOrder(), $payment, $warning);
+            $payment->setField('MARKED', 'Y');
+        } catch (\Throwable $e) {
+            $this->logger->error("Order {$payment->getOrderId()}: the refund notice was not added: " . $e->getMessage());
+        }
+    }
+
+
+    /**
+     * Payment attempts stored by earlier versions have no payment id. They are
+     * not used for this payment when another PaynetEasy payment of the order
+     * is paid: the stored attempt may be the one that paid it.
+     */
+    private function useLegacyAttempts($payment): bool
+    {
+        foreach ($payment->getCollection() as $item) {
+            if ($item->getId() != $payment->getId() && $item->isPaid() && self::isPaynetPayment($item)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
 
@@ -511,9 +569,12 @@ class payneteasypaymentsHandler extends ServiceHandler implements IRefund
             $this->params = $this->getPaymentParams($payment);
         }
         
+        // Only the attempts of this payment: an order may have several payments
         $response = PaynetHandler::getOrderInfo(
             $this->params,
-            $orderId
+            $orderId,
+            $payment->getId(),
+            $this->useLegacyAttempts($payment)
         );
 
         return $response;

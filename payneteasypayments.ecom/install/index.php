@@ -94,7 +94,7 @@ class payneteasypayments_ecom extends CModule
             $this->InstallOrderStatus();
 
             $connection = \Bitrix\Main\Application::getConnection();
-            $sql = "CREATE TABLE IF NOT EXISTS payneteasy_payments (id int unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY, paynet_order_id bigint unsigned NOT NULL, merchant_order_id int NOT NULL, redirect_url varchar(1024) DEFAULT NULL, INDEX merchant_order_id (merchant_order_id))";
+            $sql = "CREATE TABLE IF NOT EXISTS payneteasy_payments (id int unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY, paynet_order_id bigint unsigned NOT NULL, merchant_order_id int NOT NULL, redirect_url varchar(1024) DEFAULT NULL, payment_id int DEFAULT NULL, INDEX merchant_order_id (merchant_order_id))";
             $connection->query($sql);
 
             $APPLICATION->ThrowException(Loc::getMessage("PAYNET_SUCCESS_INSTALL"));
@@ -168,6 +168,8 @@ class payneteasypayments_ecom extends CModule
         DeleteDirFilesEx($_SERVER['DOCUMENT_ROOT'] . BX_ROOT . '/' . $this->MODULE_SALE . '.png');
         // Customer return script
         DeleteDirFilesEx(BX_ROOT . '/tools/payneteasy_return.php');
+        // Card form target for 3-D Secure
+        DeleteDirFilesEx(BX_ROOT . '/tools/payneteasy_3ds.php');
 
         return true;
     }

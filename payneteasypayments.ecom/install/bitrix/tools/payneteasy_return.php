@@ -10,7 +10,7 @@
 $query = array_merge($_GET, $_POST);
 
 // Only the order id and the gateway return fields are passed on
-$allowed = ['ORDER_ID', 'status', 'merchant_order', 'client_orderid', 'orderid', 'control', 'error_message', 'error_code', 'descriptor', 'processor-tx-id'];
+$allowed = ['ORDER_ID', 'PAYNET_PAYMENT', 'status', 'merchant_order', 'client_orderid', 'orderid', 'control', 'error_message', 'error_code', 'descriptor', 'processor-tx-id'];
 $query = array_intersect_key($query, array_flip($allowed));
 $query = array_filter($query, 'is_scalar');
 
